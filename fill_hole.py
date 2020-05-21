@@ -1,8 +1,24 @@
 import math
 import numpy as np
+import numpy.random as random
+
 node = hou.pwd()
 geo = node.geometry()
 inputs = node.inputs()
+bbox = geo.boundingBox()
+for child in hou.parent().children():
+  if (child.type().name() == "file"):
+    file_node = child
+    break
+if (hou.node(hou.parent().path()  + "/oz_bbox") != None):
+  bbox_node = hou.node(hou.parent().path()  + "/oz_bbox")
+else:
+  bbox_node = node.parent().createNode('box', 'oz_bbox')
+  bbox_node.setInput(0, file_node)
+
+def reset_camera(camera):
+  camera.parmTuple('t').set((0, 0, 0))
+  camera.parmTuple('r').set((0, 0, 0))
 
 # Choose 3D Context Region
 boundaries = inputs[1].geometry().pointGroups()
@@ -80,57 +96,92 @@ for boundary in boundaries:
       (uv_x, uv_y where 0 <= uv_x, uv_y <= 1) when the mesh is
       unwrapped using camera perspective
 
-      While not all boundary points are viewable,
-      We zoom the camera out, and re-unwrap and check again
+      While not all boundary points are viewable, We zoom the camera
+      to a value within the zoom range (converging on ideal values),
+      re-unwrap and check again
     '''
+    
     if (hou.node(hou.parent().path() + "/oz_uvtexture_" + str(i)) != None):
       uv_plane = hou.node(hou.parent().path() + "/oz_uvtexture_" + str(i))
     else:
       uv_plane = node.parent().createNode('texture', 'oz_uvtexture_' + str(i))
-    for child in hou.parent().children():
-      if (child.type().name() == "file"):
-        file_node = child
-        break
-    uv_plane.setInput(0, file_node)
     uv_plane.parm("type").set(9)
     uv_plane.parm("campath").set(camera.path())
-    uv_plane.parm("coord").set(0)
-    uv_points = uv_plane.geometry().points()
+    uv_plane.parm("coord").set(1)
 
+    zoom_out = 0
+    zoom_step = 0.1
+    uv_plane.setInput(0, bbox_node)
     visible_points = 0
-    max_visible_points = len(points)
-    scale = 0
-    # BUG: There may exist no camera view where all boundary points are visible. Fix Later
+    max_visible_points = len(bbox_node.geometry().points())
+    uv_points = uv_plane.geometry().points()
     while (visible_points != max_visible_points):
-      visible_points = 0
-      for point in points:
+        visible_points = 0
         for uv_point in uv_points:
           uv_coord = uv_point.attribValue("uv")
-          if point.number() == uv_point.number() and uv_coord[0] >= 0 and uv_coord[0] <= 1 and uv_coord[1] >= 0 and uv_coord[1] <= 1:
+          if (uv_coord[0] >= 0 and uv_coord[0] <= 1 and uv_coord[1] >= 0 and uv_coord[1] <= 1 and not all(v == 0 for v in uv_coord)):
             visible_points += 1
-      if (visible_points < max_visible_points):
-        scale += 0.1
-        camera_normal = plane_normal * scale
-        new_translation = hou.Matrix4((1, 0, 0, boundary_center[0] + plane_normal[0],
-                               0, 1, 0, boundary_center[1] + plane_normal[1],
-                               0, 0, 1, boundary_center[2] + plane_normal[2], 
-                               0, 0, 0, 1)).transposed()
+        if (visible_points != uv_points):
+          zoom_out += zoom_step
+          camera_normal = plane_normal * zoom_out
+          new_translation = hou.Matrix4((1, 0, 0, boundary_center[0] + camera_normal[0],
+                              0, 1, 0, boundary_center[1] + camera_normal[1],
+                              0, 0, 1, boundary_center[2] + camera_normal[2], 
+                              0, 0, 0, 1)).transposed()
+          reset_camera(camera)
+          camera.setWorldTransform(rotation_x * rotation_y * new_translation)
+
+    zoom_range_max = zoom_out
+    uv_plane.setInput(0, file_node)
+    best_visible_points = 0
+    max_visible_points = len(points)
+    uv_points = uv_plane.geometry().points()
+    tries = 0
+    sample_size = 10
+    max_tries = 10
+    better_zoom_findable = True
+    while ((best_visible_points != max_visible_points or better_zoom_findable) and tries < max_tries):
+      visible_points_samples = []
+      zoom_out_samples = []
+      for sample in range(sample_size):
+        if sample == 0:
+          zoom_out = zoom_range_max
+        else:
+          zoom_out = random.uniform(0, zoom_range_max)
+        visible_points = 0
+        camera_normal = plane_normal * zoom_out
+        new_translation = hou.Matrix4((1, 0, 0, boundary_center[0] + camera_normal[0],
+                              0, 1, 0, boundary_center[1] + camera_normal[1],
+                              0, 0, 1, boundary_center[2] + camera_normal[2], 
+                              0, 0, 0, 1)).transposed()
+        reset_camera(camera)
         camera.setWorldTransform(rotation_x * rotation_y * new_translation)
+        for point in points:
+          for uv_point in uv_points:
+            uv_coord = uv_point.attribValue("uv")
+            if (point.number() == uv_point.number()
+              and uv_coord[0] >= 0 and uv_coord[0] <= 1 and uv_coord[1] >= 0 and uv_coord[1] <= 1 and not all(v == 0 for v in uv_coord)):
+              visible_points += 1
+        visible_points_samples.append(visible_points)
+        zoom_out_samples.append(zoom_out)
+
+      best_visible_points = max(visible_points_samples)
+      viable_zoom_outs = []
+      for sample in range(sample_size):
+        if (visible_points_samples[sample] == best_visible_points):
+          viable_zoom_outs.append(zoom_out_samples[sample])
+      best_zoom_out = min(viable_zoom_outs)
+      if (zoom_range_max == best_zoom_out):
+        better_zoom_findable = False
+      zoom_range_max = best_zoom_out
+      tries += 1
+    if (tries >= max_tries): # Not all points could be fit to the camera
+      print("NOT ALL FINDABLE")
+    camera_normal = plane_normal * best_zoom_out
+    new_translation = hou.Matrix4((1, 0, 0, boundary_center[0] + camera_normal[0],
+                          0, 1, 0, boundary_center[1] + camera_normal[1],
+                          0, 0, 1, boundary_center[2] + camera_normal[2], 
+                          0, 0, 0, 1)).transposed()
+    reset_camera(camera)
+    camera.setWorldTransform(rotation_x * rotation_y * new_translation)
     i += 1
-    '''
-    o_bbox = geo.boundingBox()
-    o_bbox.setTo((0, 0, 0, 0, 0, 0))
-    for point in boundary.points():
-        o_bbox.enlargeToContain(point.position())
-    c_min = o_bbox.minvec() * 2.5
-    c_max = o_bbox.maxvec() * 2.5
-    c_bbox = geo.boundingBox()
-    c_bbox.setTo((c_min[0], c_min[1], c_min[2], c_max[0], c_max[1], c_max[2]))
-
-    for point in boundary.points(): # For every point in the boundary
-      for vertex in point.vertices(): # For every vertex in the point
-        if (vertex.prim().type() == hou.primType.Polygon):
-            vertex.prim().points() # We get the other points in the vertex's primitive
-
-            # If all points are in the bounding box, we add it in
-  '''
