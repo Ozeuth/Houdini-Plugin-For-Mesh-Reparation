@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import numpy.random as random
+import os
 
 node = hou.pwd()
 geo = node.geometry()
@@ -15,6 +16,9 @@ if (hou.node(hou.parent().path()  + "/oz_bbox") != None):
 else:
   bbox_node = node.parent().createNode('box', 'oz_bbox')
   bbox_node.setInput(0, file_node)
+scene = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)
+viewport = scene.curViewport()
+frame = hou.frame()
 
 def reset_camera(camera):
   camera.parmTuple('t').set((0, 0, 0))
@@ -23,7 +27,6 @@ def reset_camera(camera):
 # Choose 3D Context Region
 boundaries = inputs[1].geometry().pointGroups()
 i = 0
-clean = []
 for boundary in boundaries:
     if i == 0:
       i += 1
@@ -99,8 +102,7 @@ for boundary in boundaries:
       While not all boundary points are viewable, We zoom the camera
       to a value within the zoom range (converging on ideal values),
       re-unwrap and check again
-    '''
-    
+    '''   
     if (hou.node(hou.parent().path() + "/oz_uvtexture_" + str(i)) != None):
       uv_plane = hou.node(hou.parent().path() + "/oz_uvtexture_" + str(i))
     else:
@@ -132,6 +134,7 @@ for boundary in boundaries:
           camera.setWorldTransform(rotation_x * rotation_y * new_translation)
 
     zoom_range_max = zoom_out
+    best_zoom_out = zoom_out
     uv_plane.setInput(0, file_node)
     best_visible_points = 0
     max_visible_points = len(points)
@@ -145,7 +148,7 @@ for boundary in boundaries:
       zoom_out_samples = []
       for sample in range(sample_size):
         if sample == 0:
-          zoom_out = zoom_range_max
+          zoom_out = best_zoom_out
         else:
           zoom_out = random.uniform(0, zoom_range_max)
         visible_points = 0
@@ -171,12 +174,15 @@ for boundary in boundaries:
         if (visible_points_samples[sample] == best_visible_points):
           viable_zoom_outs.append(zoom_out_samples[sample])
       best_zoom_out = min(viable_zoom_outs)
-      if (zoom_range_max == best_zoom_out):
-        better_zoom_findable = False
-      zoom_range_max = best_zoom_out
+
+      if (best_visible_points == max_visible_points):
+        if (zoom_range_max == best_zoom_out):
+          better_zoom_findable = False
+        zoom_range_max = best_zoom_out
       tries += 1
-    if (tries >= max_tries): # Not all points could be fit to the camera
-      print("NOT ALL FINDABLE")
+    if (best_visible_points != max_visible_points): # Not all points could be fit to the camera
+      i += 1
+      continue
     camera_normal = plane_normal * best_zoom_out
     new_translation = hou.Matrix4((1, 0, 0, boundary_center[0] + camera_normal[0],
                           0, 1, 0, boundary_center[1] + camera_normal[1],
@@ -184,4 +190,20 @@ for boundary in boundaries:
                           0, 0, 0, 1)).transposed()
     reset_camera(camera)
     camera.setWorldTransform(rotation_x * rotation_y * new_translation)
+    '''
+    4. Camera takes a photo of opening, storing 3D -> 2D mapping of opening points
+    '''
+    viewport.setCamera(camera)
+    mapping = []
+    for point in points:
+      mapping.append(viewport.mapToScreen(point.position()))
+    flip_options = scene.flipbookSettings().stash()
+    flip_options.frameRange((frame, frame))
+    flip_options.beautyPassOnly(True)
+    flip_options.cropOutMaskOverlay(True)
+    path_name = hou.hipFile.name().split(".")[0]
+    if not os.path.exists(path_name):
+      os.makedirs(path_name)
+    flip_options.output(path_name+"/opening_"+str(i)+".png")
+    scene.flipbook(viewport, flip_options)
     i += 1
