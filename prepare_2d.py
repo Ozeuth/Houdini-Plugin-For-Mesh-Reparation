@@ -26,13 +26,10 @@ if (cam and pix):
       cam_pos.append(cam_point)
       pix_pos.append(pix_point)
     while (os.path.isfile(path_name + "/opening_" + str(i) + ".png.mantra_checkpoint")):
-      time.sleep(1) # This image has not yet been rendered
+      time.sleep(1) # BUG: Still does not wait for image to be rendered
     image = Image.open(path_name + "/opening_" + str(i) + ".png")
-    # Pixel y coordinates are inversed. So we flip vertically the image, draw and flip back
-    image = image.transpose(PIL.Image.FLIP_TOP_BOTTOM)
     draw = ImageDraw.Draw(image)
     for j in range(len(points)):
       draw.point((int(pix_pos[j][0]), int(pix_pos[j][1])), "red")
-    image = image.transpose(PIL.Image.FLIP_TOP_BOTTOM)
     image.save(path_name + "/opening_" + str(i) + ".png")
     i += 1
