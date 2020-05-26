@@ -24,9 +24,11 @@ def reset_camera(camera):
   camera.parmTuple('t').set((0, 0, 0))
   camera.parmTuple('r').set((0, 0, 0))
 
-# Choose 3D Context Region
+# 1-3: Choose 3D Context Region
 boundaries = inputs[1].geometry().pointGroups()
 i = 0
+resolutions_x = []
+resolutions_y = []
 for boundary in boundaries:
   if i == 0:
     i += 1
@@ -91,8 +93,11 @@ for boundary in boundaries:
                           0, plane_normal[1]/d, v/d, 0, 
                           0, 0, 0, 1))
   camera.setWorldTransform(rotation_x * rotation_y * translation)
-  camera.parm('resx').set(1920)
-  camera.parm('resy').set(1080)
+  resolution = (1920, 1080)
+  camera.parm('resx').set(resolution[0])
+  camera.parm('resy').set(resolution[1])
+  resolutions_x.append(resolution[0])
+  resolutions_y.append(resolution[1])
   '''
   3. Camera is zoomed out until it views all boundary point
     A point is viewable if it is given a valid UV coordinate
@@ -190,9 +195,7 @@ for boundary in boundaries:
                         0, 0, 0, 1)).transposed()
   reset_camera(camera)
   camera.setWorldTransform(rotation_x * rotation_y * new_translation)
-  '''
-  4. Camera takes a photo of opening, storing 3D -> 2D mapping of opening points
-  '''
+
   if (hou.node("/out/oz_render_" + str(i))):
     render = hou.node("/out/oz_render_" + str(i))
   else:
@@ -203,4 +206,11 @@ for boundary in boundaries:
   render.parm("camera").set(camera.path())
   render.parm("vm_picture").set(path_name + "/opening_" + str(i) + ".png")
   i += 1
+
+if (not(geo.findGlobalAttrib("resolutionsx") or geo.findGlobalAttrib("resolutionsy"))):
+  geo.addAttrib(hou.attribType.Global, "resolutionsx", resolutions_x)
+  geo.addAttrib(hou.attribType.Global, "resolutionsy", resolutions_y)
+else:
+  geo.geometry().setGlobalAttribValue("resolutionsx", resolutions_x)
+  geo.geometry().setGlobalAttribValue("resolutionsy", resolutions_y)
 node.bypass(True)
