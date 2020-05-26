@@ -93,7 +93,7 @@ for boundary in boundaries:
                           0, plane_normal[1]/d, v/d, 0, 
                           0, 0, 0, 1))
   camera.setWorldTransform(rotation_x * rotation_y * translation)
-  resolution = (1920, 1080)
+  resolution = (1280, 720)
   camera.parm('resx').set(resolution[0])
   camera.parm('resy').set(resolution[1])
   resolutions_x.append(resolution[0])
