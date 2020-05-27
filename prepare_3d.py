@@ -25,28 +25,9 @@ scene = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)
 viewport = scene.curViewport()
 frame = hou.frame()
 
-def find_parm(name):
-  params = hou.parent().parms()
-  found_eval = None
-  for param in params:
-    if (name in param.name()):
-      found_eval = param.eval()
-      return found_eval
-  return None
-
 def reset_camera(camera):
   camera.parmTuple('t').set((0, 0, 0))
   camera.parmTuple('r').set((0, 0, 0))
-
-repair_path =r"C:\Users\Ozeuth\Python-Houdini-Mesh-Repair"
-if (hou.parent()):
-  if (find_parm("repairPath")): repair_path = find_parm("repairPath")
-
-if not ("# -- Houdini Mesh Repairer -- #" in hou.sessionModuleSource()):
-  session_file = open(repair_path + "/session.py", "r")
-  source = session_file.read()
-  hou.appendSessionModuleSource(source)
-  session_file.close()
 
 # 1-3: Choose 3D Context Region
 boundaries = inputs[1].geometry().pointGroups()

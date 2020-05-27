@@ -22,7 +22,7 @@ if subnet.canCreateDigitalAsset():
 
   inputs_folder = hou.FolderParmTemplate("inputs_folder", "Inputs", folder_type = hou.folderType.Tabs)
   inputs_folder.addParmTemplate(hou.StringParmTemplate("repairPath", "Repairer Path", 1, help="Path to Mesh Repairer"))
-  inputs_folder.addParmTemplate(hou.ButtonParmTemplate("new", "New Reparation", script_callback = "hou.session.repair()", script_callback_language = hou.scriptLanguage.Python, help="Begin New Reparation"))
+  inputs_folder.addParmTemplate(hou.ButtonParmTemplate("new", "New Reparation", script_callback = "hou.node(hou.pwd().path() + '/setup').setDisplayFlag(True)", script_callback_language = hou.scriptLanguage.Python, help="Begin New Reparation"))
 
   parm_group.append(inputs_folder)
   asset.setParmTemplateGroup(parm_group)

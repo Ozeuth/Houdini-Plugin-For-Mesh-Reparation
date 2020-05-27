@@ -4,7 +4,9 @@ from PIL import Image, ImageDraw
 node = hou.pwd()
 geo = node.geometry()
 boundaries = node.inputs()[1].geometry().pointGroups()
-
+'''
+ 5. Map 3D Context Region -> 2D Render
+'''
 pix = geo.findPointAttrib("pix")
 path_name = hou.hipFile.name().split(".")[0]
 if (pix):
