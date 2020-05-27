@@ -4,11 +4,9 @@ int resolutionsx[] = detailattrib(geoself(), "resolutionsx", 0, successx);
 int resolutionsy[] = detailattrib(geoself(), "resolutionsy", 0, successy);
 if (successx + successy == 2) {
   int opening_num = len(resolutionsx);
-  v[]@cam;
   v[]@pix;
   for (int i = 1; i <= opening_num; i++) {
     vector pos = toNDC("/obj/oz_camera_"+itoa(i), @P);
-    append(@cam, pos); // Position of Point in CamSpace
     vector res = set(resolutionsx[i-1], resolutionsy[i-1]);
     vector pixel = pos * res;
     pixel.y = resolutionsy[i-1] - pixel.y;

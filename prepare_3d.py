@@ -2,27 +2,51 @@ import math
 import numpy as np
 import numpy.random as random
 import os
+from PIL import Image, ImageDraw
 
 node = hou.pwd()
 geo = node.geometry()
 inputs = node.inputs()
-bbox = geo.boundingBox()
-for child in hou.parent().children():
-  if (child.type().name() == "file"):
-    file_node = child
-    break
-if (hou.node(hou.parent().path()  + "/oz_bbox") != None):
-  bbox_node = hou.node(hou.parent().path()  + "/oz_bbox")
+is_DA = "mesh_repairer" in node.parent().name()
+
+if (is_DA):
+  input_node = node.parent().indirectInputs()[0]
 else:
-  bbox_node = node.parent().createNode('box', 'oz_bbox')
-  bbox_node.setInput(0, file_node)
+  assert (inputs[0].type().name() == "file"), ("ERROR: Input must be chosen geometry")
+  input_node = inputs[0]
+
+if (hou.node(hou.parent().path() + "/oz_bbox")):
+  bbox_node = hou.node(hou.parent().path() + "/oz_bbox")
+else:
+  bbox_node = node.parent().createNode("box", "oz_bbox")
+  bbox_node.setInput(0, input_node)
+
 scene = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)
 viewport = scene.curViewport()
 frame = hou.frame()
 
+def find_parm(name):
+  params = hou.parent().parms()
+  found_eval = None
+  for param in params:
+    if (name in param.name()):
+      found_eval = param.eval()
+      return found_eval
+  return None
+
 def reset_camera(camera):
   camera.parmTuple('t').set((0, 0, 0))
   camera.parmTuple('r').set((0, 0, 0))
+
+repair_path =r"C:\Users\Ozeuth\Python-Houdini-Mesh-Repair"
+if (hou.parent()):
+  if (find_parm("repairPath")): repair_path = find_parm("repairPath")
+
+if not ("# -- Houdini Mesh Repairer -- #" in hou.sessionModuleSource()):
+  session_file = open(repair_path + "/session.py", "r")
+  source = session_file.read()
+  hou.appendSessionModuleSource(source)
+  session_file.close()
 
 # 1-3: Choose 3D Context Region
 boundaries = inputs[1].geometry().pointGroups()
@@ -139,7 +163,7 @@ for boundary in boundaries:
 
   zoom_range_max = zoom_out
   best_zoom_out = zoom_out
-  uv_plane.setInput(0, file_node)
+  uv_plane.setInput(0, input_node)
   best_visible_points = 0
   max_visible_points = len(points)
   uv_points = uv_plane.geometry().points()
@@ -195,16 +219,21 @@ for boundary in boundaries:
                         0, 0, 0, 1)).transposed()
   reset_camera(camera)
   camera.setWorldTransform(rotation_x * rotation_y * new_translation)
-
   if (hou.node("/out/oz_render_" + str(i))):
     render = hou.node("/out/oz_render_" + str(i))
   else:
     render = hou.node("/out").createNode("ifd", "oz_render_" + str(i))
   path_name = hou.hipFile.name().split(".")[0]
+  image_path = path_name + "/opening_" + str(i) + ".png"
   if not os.path.exists(path_name):
     os.makedirs(path_name)
+  if (not os.path.isfile(image_path)): # Prevent Mantra "no file" complaint
+    temp_img = Image.new('RGB', (60,30), color=(0, 0, 0))
+    draw = ImageDraw.Draw(temp_img)
+    draw.text((10, 10), "Temp Img", fill=(255, 255, 255))
+    temp_img.save(image_path)
   render.parm("camera").set(camera.path())
-  render.parm("vm_picture").set(path_name + "/opening_" + str(i) + ".png")
+  render.parm("vm_picture").set(image_path)
   i += 1
 
 if (not(geo.findGlobalAttrib("resolutionsx") or geo.findGlobalAttrib("resolutionsy"))):
