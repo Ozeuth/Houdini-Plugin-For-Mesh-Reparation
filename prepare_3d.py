@@ -112,7 +112,7 @@ for boundary in boundaries:
     to a value within the zoom range (converging on ideal values),
     re-unwrap and check again
   '''   
-  if (hou.node(hou.parent().path() + "/oz_uvtexture_" + str(i)) != None):
+  if (hou.node(hou.parent().path() + "/oz_uvtexture_" + str(i))):
     uv_plane = hou.node(hou.parent().path() + "/oz_uvtexture_" + str(i))
   else:
     uv_plane = node.parent().createNode('texture', 'oz_uvtexture_' + str(i))
