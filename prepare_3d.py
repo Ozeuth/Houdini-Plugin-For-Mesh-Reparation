@@ -1,8 +1,13 @@
+import glob
 import math
 import numpy as np
 import numpy.random as random
 import os
 from PIL import Image, ImageDraw
+
+def reset_camera(camera):
+  camera.parmTuple('t').set((0, 0, 0))
+  camera.parmTuple('r').set((0, 0, 0))
 
 node = hou.pwd()
 geo = node.geometry()
@@ -14,23 +19,25 @@ if (is_DA):
 else:
   assert (inputs[0].type().name() == "file"), ("ERROR: Input must be chosen geometry")
   input_node = inputs[0]
-
-if (hou.node(hou.parent().path() + "/oz_bbox")):
-  bbox_node = hou.node(hou.parent().path() + "/oz_bbox")
-else:
-  bbox_node = node.parent().createNode("box", "oz_bbox")
-  bbox_node.setInput(0, input_node)
+bbox_node = hou.node(hou.parent().path() + "/oz_bbox")
+uv_bbox_node = hou.node(hou.parent().path() + "/uv_viewer_bbox")
+uv_node = hou.node(hou.parent().path() + "/uv_viewer")
 
 scene = hou.ui.curDesktop().paneTabOfType(hou.paneTabType.SceneViewer)
 viewport = scene.curViewport()
 frame = hou.frame()
-
-def reset_camera(camera):
-  camera.parmTuple('t').set((0, 0, 0))
-  camera.parmTuple('r').set((0, 0, 0))
+path_name = hou.hipFile.name().split(".")[0]
+if not os.path.exists(path_name):
+  os.makedirs(path_name)
+boundaries = inputs[1].geometry().pointGroups()
+try:
+  for excess in range(len(boundaries-1), len(glob.glob(path_name + "/*.png"))):
+    os.remove(path_name + "/opening_" + str(excess) + ".png")
+except:
+  for f in glob.glob(path_name + "/*.png"):
+    os.remove(f)
 
 # 1-3: Choose 3D Context Region
-boundaries = inputs[1].geometry().pointGroups()
 i = 0
 resolutions_x = []
 resolutions_y = []
@@ -111,21 +118,16 @@ for boundary in boundaries:
     While not all boundary points are viewable, We zoom the camera
     to a value within the zoom range (converging on ideal values),
     re-unwrap and check again
-  '''   
-  if (hou.node(hou.parent().path() + "/oz_uvtexture_" + str(i))):
-    uv_plane = hou.node(hou.parent().path() + "/oz_uvtexture_" + str(i))
-  else:
-    uv_plane = node.parent().createNode('texture', 'oz_uvtexture_' + str(i))
-  uv_plane.parm("type").set(9)
-  uv_plane.parm("campath").set(camera.path())
-  uv_plane.parm("coord").set(1)
+  '''
+  uv_bbox_node.parm("campath").set(camera.path())
+  uv_node.parm("campath").set(camera.path())
 
   zoom_out = 0
   zoom_step = 0.1
-  uv_plane.setInput(0, bbox_node)
+  uv_bbox_node.setInput(0, bbox_node)
   visible_points = 0
   max_visible_points = len(bbox_node.geometry().points())
-  uv_points = uv_plane.geometry().points()
+  uv_points = uv_bbox_node.geometry().points()
   while (visible_points != max_visible_points):
     visible_points = 0
     for uv_point in uv_points:
@@ -144,10 +146,8 @@ for boundary in boundaries:
 
   zoom_range_max = zoom_out
   best_zoom_out = zoom_out
-  uv_plane.setInput(0, input_node)
   best_visible_points = 0
   max_visible_points = len(points)
-  uv_points = uv_plane.geometry().points()
   tries = 0
   sample_size = 10
   max_tries = 10
@@ -169,11 +169,9 @@ for boundary in boundaries:
       reset_camera(camera)
       camera.setWorldTransform(rotation_x * rotation_y * new_translation)
       for point in points:
-        for uv_point in uv_points:
-          uv_coord = uv_point.attribValue("uv")
-          if (point.number() == uv_point.number()
-            and uv_coord[0] >= 0 and uv_coord[0] <= 1 and uv_coord[1] >= 0 and uv_coord[1] <= 1 and not all(v == 0 for v in uv_coord)):
-            visible_points += 1
+        uv_coord = point.attribValue("uv")
+        if (uv_coord[0] >= 0 and uv_coord[0] <= 1 and uv_coord[1] >= 0 and uv_coord[1] <= 1 and not all(v == 0 for v in uv_coord)):
+          visible_points+= 1
       visible_points_samples.append(visible_points)
       zoom_out_samples.append(zoom_out)
 
@@ -189,7 +187,6 @@ for boundary in boundaries:
         better_zoom_findable = False
       zoom_range_max = best_zoom_out
     tries += 1
-
   if (best_visible_points != max_visible_points): # Not all points could be fit to the camera
     i += 1
     continue
@@ -204,10 +201,7 @@ for boundary in boundaries:
     render = hou.node("/out/oz_render_" + str(i))
   else:
     render = hou.node("/out").createNode("ifd", "oz_render_" + str(i))
-  path_name = hou.hipFile.name().split(".")[0]
   image_path = path_name + "/opening_" + str(i) + ".png"
-  if not os.path.exists(path_name):
-    os.makedirs(path_name)
   if (not os.path.isfile(image_path)): # Prevent Mantra "no file" complaint
     temp_img = Image.new('RGB', (60,30), color=(0, 0, 0))
     draw = ImageDraw.Draw(temp_img)
