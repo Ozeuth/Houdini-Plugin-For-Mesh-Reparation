@@ -75,7 +75,7 @@ for boundary in boundaries:
   '''
   2. Camera is fit to Projection Plane via translation + rotation
   '''
-  if (hou.node('/obj/oz_camera_' + str(i)) != None):
+  if (hou.node('/obj/oz_camera_' + str(i))):
     camera = hou.node('/obj/oz_camera_' + str(i))
   else:
     camera = hou.node('/obj').createNode('cam', 'oz_camera_' + str(i))
