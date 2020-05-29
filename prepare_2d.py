@@ -16,8 +16,6 @@ if not target_edge_groups == edge_groups:
   edge_boundary_node.parm("group1").set(target_edge_groups)
 
 edge_boundaries = edge_boundary_node.geometry().edgeGroups()
-print(edge_boundary_node.geometry())
-print(edge_boundaries)
 '''
  5. Map 3D Context Region -> 2D Render
 '''
