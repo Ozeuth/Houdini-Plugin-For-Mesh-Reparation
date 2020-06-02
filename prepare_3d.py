@@ -87,9 +87,11 @@ for boundary in boundaries:
   else:
     camera = hou.node('/obj').createNode('cam', 'oz_camera_' + str(i))
   if (not fit_fail):
-    plane_normal = np.array([-1 * a/c, -1 * b/c, 1/c])
+    plane_normal = np.array([a, b, -1]) / math.sqrt(math.pow(a, 2) + math.pow(b, 2) + 1)
+    plane_dist = c / math.sqrt(math.pow(a, 2) + math.pow(b, 2) + 1) # TODO: p > 0 or p < 0 half-space origin test
   else:
-    plane_normal = np.array([0.001, 1, 0.001]) * (1 if ((a * b * c) >= 0) else -1)
+    plane_normal = np.array([0.001, 1, 0.001])* (1 if (a >= 0) else -1)
+    plane_dist = 0.001
   translation = hou.Matrix4((1, 0, 0, boundary_center[0],
                               0, 1, 0, boundary_center[1],
                               0, 0, 1, boundary_center[2], 
@@ -196,13 +198,13 @@ for boundary in boundaries:
                         0, 0, 1, boundary_center[2] + camera_normal[2], 
                         0, 0, 0, 1)).transposed()
   reset_camera(camera)
-  camera.setWorldTransform(rotation_x * rotation_y * new_translation)
+  camera.setWorldTransform(rotation_x * rotation_y * new_translation) 
   if (hou.node("/out/oz_render_" + str(i))):
     render = hou.node("/out/oz_render_" + str(i))
   else:
     render = hou.node("/out").createNode("ifd", "oz_render_" + str(i))
   image_path = path_name + "/opening_" + str(i) + ".png"
-  if (not os.path.isfile(image_path)): # Prevent Mantra "no file" complaint
+  if (not os.path.isfile(image_path)):
     temp_img = Image.new('RGB', (60,30), color=(0, 0, 0))
     draw = ImageDraw.Draw(temp_img)
     draw.text((10, 10), "Temp Img", fill=(255, 255, 255))
@@ -215,6 +217,6 @@ if (not(geo.findGlobalAttrib("resolutionsx") or geo.findGlobalAttrib("resolution
   geo.addAttrib(hou.attribType.Global, "resolutionsx", resolutions_x)
   geo.addAttrib(hou.attribType.Global, "resolutionsy", resolutions_y)
 else:
-  geo.geometry().setGlobalAttribValue("resolutionsx", resolutions_x)
-  geo.geometry().setGlobalAttribValue("resolutionsy", resolutions_y)
+  geo.setGlobalAttribValue("resolutionsx", resolutions_x)
+  geo.setGlobalAttribValue("resolutionsy", resolutions_y)
 node.bypass(True)
