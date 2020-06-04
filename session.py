@@ -7,6 +7,18 @@ from PIL import ImageFont
 import time
 from threading import Thread
 
+cameras_info = {
+  "centers": [],
+  "rotationsx": [],
+  "rotationsy": [],
+  "normals": [],
+  "zooms": []
+}
+
+def reset_camera(camera):
+  camera.parmTuple('t').set((0, 0, 0))
+  camera.parmTuple('r').set((0, 0, 0))
+
 def render_then_map(image_paths, node_2d):
   '''
   NOTE: This is a tenuous solution to a synchronicity issue.
@@ -46,9 +58,12 @@ def repair():
       node_2d = hou.node(node.path() + "/prepare_2d")
   assert (node_3d and node_op_3d and node_2d), ("ERROR: Please reinstate Digital Asset")
   node_3d.bypass(False)
+  '''
+  4-6: 3D Context Region Optimization
+  '''
   node_op_3d.bypass(False)
   '''
-  6. Generate 2D Render
+  7. Generate 2D Render
   '''
   num_images = len(glob.glob(hou.hipFile.name().split(".")[0] + "/*.png"))
   mark_for_destroy = []
@@ -69,7 +84,7 @@ def repair():
         mark_for_destroy.append(render)
 
   '''
-  7. Map 3D Context Region -> 2D Render
+  8. Map 3D Context Region -> 2D Render
   '''
   #render_then_map(image_paths, node_2d)
   render_map_thread = Thread(target=render_then_map, args=(image_paths,node_2d,))

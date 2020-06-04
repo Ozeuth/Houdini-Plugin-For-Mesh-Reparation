@@ -8,12 +8,11 @@ boundaries = boundary_node.geometry().pointGroups()
 edge_boundary_node = node.inputs()[2]
 edge_boundaries = edge_boundary_node.geometry().edgeGroups()
 '''
- 7. Map 3D Context Region -> 2D Render
+ 8. Map 3D Context Region -> 2D Render
 '''
 pix = geo.findPointAttrib("pix_new")
 path_name = hou.hipFile.name().split(".")[0]
 if (pix):
-  print("FOUND PIX_NEW")
   for i in range(1, len(boundaries)):
     boundary = boundaries[i]
     edge_boundary = edge_boundaries[i-1]

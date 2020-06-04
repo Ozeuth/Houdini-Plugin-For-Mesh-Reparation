@@ -5,10 +5,6 @@ import numpy.random as random
 import os
 from PIL import Image, ImageDraw
 
-def reset_camera(camera):
-  camera.parmTuple('t').set((0, 0, 0))
-  camera.parmTuple('r').set((0, 0, 0))
-
 node = hou.pwd()
 geo = node.geometry()
 inputs = node.inputs()
@@ -41,6 +37,7 @@ except:
 i = 0
 resolutions_x = []
 resolutions_y = []
+
 for boundary in boundaries:
   if i == 0:
     i += 1
@@ -113,13 +110,10 @@ for boundary in boundaries:
   resolutions_x.append(resolution[0])
   resolutions_y.append(resolution[1])
   '''
-  3. Camera is zoomed out until it views all boundary point
+  3. Camera is zoomed out until entire mesh is visible.
     A point is viewable if it is given a valid UV coordinate
     (uv_x, uv_y where 0 <= uv_x, uv_y <= 1) when the mesh is
-    unwrapped using camera perspective
-    While not all boundary points are viewable, We zoom the camera
-    to a value within the zoom range (converging on ideal values),
-    re-unwrap and check again
+    unwrapped using camera perspective.
   '''
   uv_bbox_node.parm("campath").set(camera.path())
   uv_node.parm("campath").set(camera.path())
@@ -143,62 +137,16 @@ for boundary in boundaries:
                           0, 1, 0, boundary_center[1] + camera_normal[1],
                           0, 0, 1, boundary_center[2] + camera_normal[2], 
                           0, 0, 0, 1)).transposed()
-      reset_camera(camera)
+      hou.session.reset_camera(camera)
       camera.setWorldTransform(rotation_x * rotation_y * new_translation)
 
-  zoom_range_max = zoom_out
-  best_zoom_out = zoom_out
-  best_visible_points = 0
-  max_visible_points = len(points)
-  tries = 0
-  sample_size = 10
-  max_tries = 10
-  better_zoom_findable = True
-  while ((best_visible_points != max_visible_points or better_zoom_findable) and tries < max_tries):
-    visible_points_samples = []
-    zoom_out_samples = []
-    for sample in range(sample_size):
-      if sample == 0:
-        zoom_out = best_zoom_out
-      else:
-        zoom_out = random.uniform(0, zoom_range_max)
-      visible_points = 0
-      camera_normal = plane_normal * zoom_out
-      new_translation = hou.Matrix4((1, 0, 0, boundary_center[0] + camera_normal[0],
-                            0, 1, 0, boundary_center[1] + camera_normal[1],
-                            0, 0, 1, boundary_center[2] + camera_normal[2], 
-                            0, 0, 0, 1)).transposed()
-      reset_camera(camera)
-      camera.setWorldTransform(rotation_x * rotation_y * new_translation)
-      for point in points:
-        uv_coord = point.attribValue("uv")
-        if (uv_coord[0] >= 0 and uv_coord[0] <= 1 and uv_coord[1] >= 0 and uv_coord[1] <= 1 and not all(v == 0 for v in uv_coord)):
-          visible_points+= 1
-      visible_points_samples.append(visible_points)
-      zoom_out_samples.append(zoom_out)
 
-    best_visible_points = max(visible_points_samples)
-    viable_zoom_outs = []
-    for sample in range(sample_size):
-      if (visible_points_samples[sample] == best_visible_points):
-        viable_zoom_outs.append(zoom_out_samples[sample])
-    best_zoom_out = min(viable_zoom_outs)
+  hou.session.cameras_info["centers"].append(boundary_center)
+  hou.session.cameras_info["rotationsx"].append(rotation_x)
+  hou.session.cameras_info["rotationsy"].append(rotation_y)
+  hou.session.cameras_info["normals"].append(plane_normal)
+  hou.session.cameras_info["zooms"].append(zoom_out)
 
-    if (best_visible_points == max_visible_points):
-      if (zoom_range_max == best_zoom_out):
-        better_zoom_findable = False
-      zoom_range_max = best_zoom_out
-    tries += 1
-  if (best_visible_points != max_visible_points): # Not all points could be fit to the camera
-    i += 1
-    continue
-  camera_normal = plane_normal * best_zoom_out
-  new_translation = hou.Matrix4((1, 0, 0, boundary_center[0] + camera_normal[0],
-                        0, 1, 0, boundary_center[1] + camera_normal[1],
-                        0, 0, 1, boundary_center[2] + camera_normal[2], 
-                        0, 0, 0, 1)).transposed()
-  reset_camera(camera)
-  camera.setWorldTransform(rotation_x * rotation_y * new_translation) 
   if (hou.node("/out/oz_render_" + str(i))):
     render = hou.node("/out/oz_render_" + str(i))
   else:
@@ -213,7 +161,7 @@ for boundary in boundaries:
   render.parm("vm_picture").set(image_path)
   i += 1
 
-if (not(geo.findGlobalAttrib("resolutionsx") or geo.findGlobalAttrib("resolutionsy"))):
+if not(geo.findGlobalAttrib("resolutionsx") or geo.findGlobalAttrib("resolutionsy")):
   geo.addAttrib(hou.attribType.Global, "resolutionsx", resolutions_x)
   geo.addAttrib(hou.attribType.Global, "resolutionsy", resolutions_y)
 else:
