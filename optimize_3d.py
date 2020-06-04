@@ -71,8 +71,17 @@ if (pix):
         d += edge.length()
     d /= len(edges)
     q = 0.87 * d
-    x_true_res = int(x_prop_res / q)
-    y_true_res = int(y_prop_res / q)
+    x_true_res = x_prop_res / q
+    y_true_res = y_prop_res / q
+    # NOTE: Houdini Non-Commercial limited to 1280 x 720, so scale res down
+    downscale = 1
+    if (x_true_res > 1280 or y_true_res > 720):
+      x_downscale = x_true_res / 1280
+      y_downscale = y_true_res / 720
+      downscale = max(x_downscale, y_downscale)
+    x_true_res = int(x_true_res / downscale)
+    y_true_res = int(y_true_res / downscale)
+
     camera = hou.node('/obj/oz_camera_' + str(i))
     camera.parm('resx').set(x_true_res)
     camera.parm('resy').set(y_true_res)

@@ -94,3 +94,8 @@ def repair():
   '''
   for node in mark_for_destroy:
     node.destroy()
+  cameras_info["center"] = []
+  cameras_info["rotationsx"] = []
+  cameras_info["rotationsy"] = []
+  cameras_info["normals"] = []
+  cameras_info["zooms"] = []
