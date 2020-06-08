@@ -15,6 +15,15 @@ cameras_info = {
   "zooms": []
 }
 
+def find_parm(node, name):
+  params = hou.parent().parms()
+  found_eval = None
+  for param in params:
+    if (name in param.name()):
+      found_eval = param.eval()
+      break
+  return found_eval
+
 def reset_camera(camera):
   camera.parmTuple('t').set((0, 0, 0))
   camera.parmTuple('r').set((0, 0, 0))

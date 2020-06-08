@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import numpy.random as random
 
@@ -19,6 +20,10 @@ edge_boundaries = edge_boundary_node.geometry().edgeGroups()
 uv_node = hou.node(hou.parent().path() + "/uv_viewer")
 
 cameras_info = hou.session.cameras_info
+alpha = hou.session.find_parm(hou.parent(), "alpha")
+is_alpha = bool(hou.session.find_parm(hou.parent(), "isAlpha"))
+if is_alpha:
+  print("Current Alpha: " + str(alpha))
 '''
 4. Optimize Camera View Proportions by:
 - Ensuring equitable locality knowledge in vertical and horizontal axes 
@@ -37,14 +42,18 @@ if (pix):
     max_x = 0
     min_y = float('inf')
     max_y = 0
+    pix_pos = []
     for point in points:
       pix_attrib = point.attribValue(pix)
       curr_x = pix_attrib[(i-1) * 3]
       curr_y = pix_attrib[(i-1) * 3 + 1]
+      curr_z = pix_attrib[(i-1) * 3 + 2]
+      pix_pos.append((point.number(), (curr_x, curr_y, curr_z)))
       min_x = min(min_x, curr_x)
       max_x = max(max_x, curr_x)
       min_y = min(min_y, curr_y)
       max_y = max(max_y, curr_y)
+    pix_pos = dict(pix_pos)
     x_prop_res = max_x - min_x
     y_prop_res = max_y - min_y
 
@@ -68,9 +77,12 @@ if (pix):
     '''
     d = 0
     for edge in edges:
-        d += edge.length()
+      edge_points = edge.points()
+      edge_pix_0 = pix_pos.get(edge_points[0].number())
+      edge_pix_1 = pix_pos.get(edge_points[1].number())
+      d += math.sqrt(math.pow(edge_pix_1[0] - edge_pix_0[0], 2) + math.pow(edge_pix_1[1] - edge_pix_0[1], 2))
     d /= len(edges)
-    q = 0.87 * d
+    q = alpha * d
     x_true_res = x_prop_res / q
     y_true_res = y_prop_res / q
     # NOTE: Houdini Non-Commercial limited to 1280 x 720, so scale res down
@@ -79,8 +91,8 @@ if (pix):
       x_downscale = x_true_res / 1280
       y_downscale = y_true_res / 720
       downscale = max(x_downscale, y_downscale)
-    x_true_res = int(x_true_res / downscale)
-    y_true_res = int(y_true_res / downscale)
+    x_true_res = math.ceil(x_true_res / downscale)
+    y_true_res = math.ceil(y_true_res / downscale)
 
     camera = hou.node('/obj/oz_camera_' + str(i))
     camera.parm('resx').set(x_true_res)
@@ -125,8 +137,8 @@ if (pix):
                               0, 0, 0, 1)).transposed()
         hou.session.reset_camera(camera)
         camera.setWorldTransform(rotation_x * rotation_y * new_translation)
-        for point in points:
 
+        for point in points:
           uv_coord = point.attribValue("uv")
           if (uv_coord[0] >= 0 and uv_coord[0] <= 1 and uv_coord[1] >= 0 and uv_coord[1] <= 1 and not all(v == 0 for v in uv_coord)):
             visible_points+= 1
@@ -153,7 +165,7 @@ if (pix):
                           0, 0, 1, boundary_center[2] + camera_normal[2], 
                           0, 0, 0, 1)).transposed()
     hou.session.reset_camera(camera)
-    camera.setWorldTransform(rotation_x * rotation_y * new_translation) 
+    camera.setWorldTransform(rotation_x * rotation_y * new_translation)
 
   if (not(geo.findGlobalAttrib("resolutionsx_new") or geo.findGlobalAttrib("resolutionsy_new"))):
     geo.addAttrib(hou.attribType.Global, "resolutionsx_new", resolutions_x)

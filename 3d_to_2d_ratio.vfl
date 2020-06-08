@@ -1,0 +1,15 @@
+int successx = -1;
+int successy = -1;
+int resolutionsx[] = detailattrib(1, "resolutionsx_new", 0, successx);
+int resolutionsy[] = detailattrib(1, "resolutionsy_new", 0, successy);
+if (successx + successy == 2) {
+  int opening_num = len(resolutionsx);
+  v[]@pix_ratio;
+  for (int i = 1; i <= opening_num; i++) {
+    vector pos = toNDC("/obj/oz_camera_"+itoa(i), @P);
+    vector res = set(resolutionsx[i-1], resolutionsy[i-1]);
+    vector pixel = pos * res;
+    pixel.y = resolutionsy[i-1] - pixel.y;
+    append(@pix_ratio, pixel); // Position of Point in Pixel
+  }
+}
