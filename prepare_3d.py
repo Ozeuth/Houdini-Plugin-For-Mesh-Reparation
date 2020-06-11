@@ -158,6 +158,7 @@ for boundary in boundaries:
     draw = ImageDraw.Draw(temp_img)
     draw.text((10, 10), "Temp Img", fill=(255, 255, 255))
     temp_img.save(image_path)
+    temp_img.close()
   render.parm("camera").set(camera.path())
   render.parm("vm_picture").set(image_path)
   i += 1

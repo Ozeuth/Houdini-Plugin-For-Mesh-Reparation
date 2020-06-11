@@ -13,11 +13,11 @@ is_alpha = bool(hou.session.find_parm(hou.parent(), "isAlpha"))
 '''
  8. Map 3D Context Region -> 2D Render
   Generate Mask and Conditioning Area combined image from mapping,
-  ALL_x,y mask_conditioning_w[x, y] = (255, 0, 0)*1_M + (0, 255, 0)*1_C + (0, 0, 255)*1_w + (0, 0, 0)
+  ALL_x,y mask_conditioning_sub[x, y] = (255, 0, 0)*1_M + (0, 255, 0)*1_C + (0, 0, 255)*1_W + (0, 0, 0)
   where
     1_M = 1 if in Mask else 0
     1_C = 1 if in Conditioning Area else 0
-    1_w = 1 if in subdomain w else 0
+    1_W = 1 if in subdomain W else 0
   [Optional]: We determine Information Loss from mapping (Optimal Occupancy Ratio)
 '''
 pix = geo.findPointAttrib("pix_new")
@@ -36,7 +36,7 @@ if (pix):
       pix_pos.append((point.number(), pix_point))
     pix_pos = dict(pix_pos)
 
-    # Only for checking Optimal Occupancy Ratio
+    # Optionally check Optimal Occupancy Ratio
     if (is_alpha):
       uv_all_node = hou.node(hou.parent().path() + "/uv_viewer_all")
       camera = hou.node('/obj/oz_camera_' + str(i))
@@ -69,8 +69,11 @@ if (pix):
       occupance_ratio /= (x_res * y_res * 1.0)
       print("Current Occupance Ratio: " + str(occupance_ratio))
 
+    w = 3
     image = Image.open(path_name + "/opening_" + str(i) + ".png")
-    mask_cond = Image.new('RGB', image.size, color=(0, 0, 255))
+    image_size = image.size
+    image.close()
+    mask_cond = Image.new('RGB', image_size, color=(0, 0, 255))
     draw = ImageDraw.Draw(mask_cond)
     edge_pixels = []
     for edge in edges:
@@ -79,7 +82,14 @@ if (pix):
       edge_pixel_0_x = int(edge_pixel_0[0])
       edge_pixel_0_y = int(edge_pixel_0[1])
       edge_pixels.append((edge_pixel_0_x, edge_pixel_0_y))
-      draw.ellipse((edge_pixel_0_x - 3, edge_pixel_0_y - 3, edge_pixel_0_x + 3, edge_pixel_0_y + 3), fill=(0, 255, 255))
+      draw.ellipse((edge_pixel_0_x - w, edge_pixel_0_y - w, edge_pixel_0_x + w, edge_pixel_0_y + w), fill=(0, 255, 255))
+    draw.line(edge_pixels, fill=(0, 255, 255), width= 2*w + 1)
+    draw.line((edge_pixels[0], edge_pixels[len(edge_pixels)-1]), fill=(0, 255, 255), width= 2*w + 1)
     draw.polygon(edge_pixels, fill=(255, 0, 0), outline=None)
     mask_cond.save(path_name + "/mask_cond_w_" + str(i) + ".png")
+    mask_cond.close()
+'''
+9. 2D inpainting
+'''
+
 node.bypass(True)
