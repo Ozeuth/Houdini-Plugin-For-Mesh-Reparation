@@ -1,6 +1,6 @@
 # -- Houdini Mesh Repairer -- #
-import glob
 import hou
+import glob
 import nodesearch
 import os
 from PIL import ImageFont

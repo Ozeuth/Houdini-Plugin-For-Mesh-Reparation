@@ -1,4 +1,5 @@
 import PIL
+import hou
 from PIL import Image, ImageDraw
 
 node = hou.pwd()
@@ -11,6 +12,13 @@ edge_boundaries = edge_boundary_node.geometry().edgeGroups()
 is_alpha = bool(hou.session.find_parm(hou.parent(), "isAlpha"))
 '''
  8. Map 3D Context Region -> 2D Render
+  Generate Mask and Conditioning Area combined image from mapping,
+  ALL_x,y mask_conditioning_w[x, y] = (255, 0, 0)*1_M + (0, 255, 0)*1_C + (0, 0, 255)*1_w + (0, 0, 0)
+  where
+    1_M = 1 if in Mask else 0
+    1_C = 1 if in Conditioning Area else 0
+    1_w = 1 if in subdomain w else 0
+  [Optional]: We determine Information Loss from mapping (Optimal Occupancy Ratio)
 '''
 pix = geo.findPointAttrib("pix_new")
 path_name = hou.hipFile.name().split(".")[0]
@@ -42,6 +50,7 @@ if (pix):
       pix_all_num = {}
       for all_point in all_points:
         uv_coord = all_point.attribValue("uv_all")
+        # TODO: Do not include points hidden behind faces. Rop Sop
         if (uv_coord[0] >= 0 and uv_coord[0] <= 1 and uv_coord[1] >= 0 and uv_coord[1] <= 1 and not all(v == 0 for v in uv_coord)):
           pix_all_attrib = all_point.attribValue(pix_ratio)
           pix_all_point = (pix_all_attrib[(i-1) * 3], pix_all_attrib[(i-1) * 3 + 1], pix_all_attrib[(i-1) * 3 + 2])
@@ -61,11 +70,16 @@ if (pix):
       print("Current Occupance Ratio: " + str(occupance_ratio))
 
     image = Image.open(path_name + "/opening_" + str(i) + ".png")
-    draw = ImageDraw.Draw(image)
+    mask_cond = Image.new('RGB', image.size, color=(0, 0, 255))
+    draw = ImageDraw.Draw(mask_cond)
+    edge_pixels = []
     for edge in edges:
       edge_points = edge.points()
       edge_pixel_0 = pix_pos.get(edge_points[0].number())
-      edge_pixel_1 = pix_pos.get(edge_points[1].number())
-      draw.line([(int(edge_pixel_0[0]), int(edge_pixel_0[1])), (int(edge_pixel_1[0]), int(edge_pixel_1[1]))], "red")
-    image.save(path_name + "/opening_" + str(i) + ".png")
+      edge_pixel_0_x = int(edge_pixel_0[0])
+      edge_pixel_0_y = int(edge_pixel_0[1])
+      edge_pixels.append((edge_pixel_0_x, edge_pixel_0_y))
+      draw.ellipse((edge_pixel_0_x - 3, edge_pixel_0_y - 3, edge_pixel_0_x + 3, edge_pixel_0_y + 3), fill=(0, 255, 255))
+    draw.polygon(edge_pixels, fill=(255, 0, 0), outline=None)
+    mask_cond.save(path_name + "/mask_cond_w_" + str(i) + ".png")
 node.bypass(True)
