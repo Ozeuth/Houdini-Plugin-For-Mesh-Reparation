@@ -97,13 +97,52 @@ if (pix):
     We follow B Galerne, A Leclaire[2017],
       inpainting using Gaussian conditional simulation, relying on a Kriging framework
   '''
+  # Some Helper functions
+  def get_image_het(image):
+    image_num = np.sum(np.where(image[:,:,[3]] != 0, 1, 0))
+    image_het = [0, 0, 0, 0]
+    for d in range(3):
+      image_het[d] = np.sum(image[:, :, d])
+    image_het = image_het / image_num
+    return image_het
+
+  def get_image_t(image, image_het=None):
+    t_image = np.zeros(image.shape)
+    if not image_het:
+      image_het = get_image_het(image)
+    t_image[:,:,...] = (np.maximum((image - image_het), t_image) / math.sqrt(image_num)) * 255
+    t_image[:,:,[3]] = image[:,:,[3]]
+    return t_image    
+  
+  def convolve2d_fft(A, B):
+    C = np.zeros((A.shape[0], A.shape[1], A.shape[2], B.shape[2]))
+    f_B = np.zeros((A.shape[0], A.shape[1], B.shape[-1]), dtype=np.complex128)
+    for i_M in np.arange(B.shape[-1]):
+      f_B[:, :, i_M] = np.fft.fft2(B[:, :, i_M], s=A.shape[:2])
+          
+    for i_N in np.arange(A.shape[-1]):
+      f_A = np.fft.fft2(A[:, :, i_N])
+      for i_M in np.arange(B.shape[-1]):
+        C[:, :, i_N, i_M] = np.real(np.fft.ifft2(f_A*f_B[:, :, i_M]))
+
+    if (B.shape[2] == 1):
+      return C.reshape((A.shape[0], A.shape[1], A.shape[2]))
+    else:
+      return C
+  
+  def CGD(phi, c, k_max=1000, epsilon=0.01):
+    A = np.ma.masked_where(np.where(c[:,:,[3]] != 0, 1, 0), math.pow(c-get_image_het(c), 2)).filled(fill_value=0)
+    k, psi  = 0, 0
+    r = np.matmul(np.transpose(A), phi) - np.matmul(np.transpose(A), A) * psi
+    d = r
+    return None
+
   for i in range(1, len(boundaries)):
     image = Image.open(path_name + "/opening_" + str(i) + ".png")
     image = np.array(image)
     image_size = image.shape
     mcw = Image.open(path_name + "/mcw_" + str(i) + ".png")
     mcw = np.array(mcw)
-    epsilon = 0.001
     '''
     9A. Compute
       v_het = 1/|w|*[SUMr_elem(w)(v(r)), SUMg_elem(g)(v(g)), SUMb_elem(b)(v(b))]
@@ -112,40 +151,28 @@ if (pix):
         where
           v = w restricted to u (w where u is opaque)
     '''
-    v = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[2]] == 255, image[:,:,[3]] > epsilon), [1, 1, 1, 1], [0, 0, 0, 0])==0, image).filled(fill_value=0)
-    v_num = np.sum(np.where(v[:,:,[3]] != 0, 1, 0))
-    v_het = [0, 0, 0, 0]
-    for d in range(3):
-      v_het[d] = np.sum(v[:, :, d])
-    v_het = v_het / v_num
-
-    t_v = np.zeros(v.shape)
-    t_v[:,:,...] = (np.maximum((v - v_het), t_v) / math.sqrt(v_num)) * 255
-    t_v[:,:,[3]] = v[:,:,[3]]
+    v = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[2]] == 255, image[:,:,[3]] > 0.001), [1, 1, 1, 1], [0, 0, 0, 0])==0, image).filled(fill_value=0)
+    v_het = get_image_het(v)
+    t_v = get_image_t(v)
     '''
     9B. Draw Gaussian Sample,
-      F = t_v * W
+      F = convolve(t_v, W)
       where
         W = Gaussian White Noise
     '''
-    W_mean = 0
-    W_var = 1
-    W_same = True
-
-    if (W_same):
-      # Same random value per color channel, as intended
-      W = np.random.normal(W_mean, W_var, (image_size[0], image_size[1], 1)).astype(np.float32)
-      W = np.concatenate((W, W, W), axis=2)
-    else:
-      # Different random value per channel, experimental
-      W = np.random.normal(W_mean, W_var, image_size)
-
-    #print(t_v.shape)
-    #print(W.shape)
-    #F = np.convolve(t_v, W)
-    #W *= 255
+    # TODO: Check if W is meant to be size of image, or a small window
+    # TODO: Convolution should ignore pixels where alpha == 0
+    W = np.random.normal(0, 1, (image_size[0], image_size[1], 1)).astype(np.float32)
+    F = convolve2d_fft(t_v, W)
+    '''
+    9C. Compute using GCD
+      psi_1 = gamma_t |cxc (v - v_het)
+      psi_2 = gamma_t |cxc (F|c)
+    '''
+    c = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[1]] == 255, image[:,:,[3]] > 0.001), [1, 1, 1, 1], [0, 0, 0, 0])==0, image).filled(fill_value=0)
+    
     if i ==1:
-      im = Image.fromarray(np.uint8(F))
+      im = Image.fromarray(np.uint8(c))
       im.save(path_name + "/test.png")
       im.close()
 node.bypass(True)
