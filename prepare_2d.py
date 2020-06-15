@@ -107,6 +107,7 @@ if (pix):
     return image_het
 
   def get_image_t(image, image_het=None):
+    image_num = np.sum(np.where(image[:,:,[3]] != 0, 1, 0))
     t_image = np.zeros(image.shape)
     if not image_het:
       image_het = get_image_het(image)
@@ -129,13 +130,20 @@ if (pix):
       return C.reshape((A.shape[0], A.shape[1], A.shape[2]))
     else:
       return C
-  
-  def CGD(phi, c, k_max=1000, epsilon=0.01):
-    A = np.ma.masked_where(np.where(c[:,:,[3]] != 0, 1, 0), math.pow(c-get_image_het(c), 2)).filled(fill_value=0)
+
+  def CGD(phi, A, k_max=1000, epsilon=0.01):
     k, psi  = 0, 0
     r = np.matmul(np.transpose(A), phi) - np.matmul(np.transpose(A), A) * psi
     d = r
-    return None
+    r_curr = np.linalg.norm(r, 2)
+    while (r_curr > epsilon and k <= k_max):
+      alpha = math.pow(r_curr, 2) / np.matmul(np.transpose(d), np.matmul(np.transpose(A), np.matmul(A, d)))
+      psi = psi + np.matmul(alpha , d)
+      r = r - np.matmul(np.transpose(alpha), np.matmul(np.transpose(A), np.matmul(A, d)))
+      d = r + (math.pow(np.linalg.norm(r, 2), 2) / math.pow(r_curr, 2)) * d
+      k += 1
+      r_curr = np.linalg.norm(r, 2)
+    return psi
 
   for i in range(1, len(boundaries)):
     image = Image.open(path_name + "/opening_" + str(i) + ".png")
@@ -165,14 +173,44 @@ if (pix):
     W = np.random.normal(0, 1, (image_size[0], image_size[1], 1)).astype(np.float32)
     F = convolve2d_fft(t_v, W)
     '''
-    9C. Compute using GCD
+    9C. Compute using CGD
       psi_1 = gamma_t |cxc (v - v_het)
       psi_2 = gamma_t |cxc (F|c)
     '''
-    c = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[1]] == 255, image[:,:,[3]] > 0.001), [1, 1, 1, 1], [0, 0, 0, 0])==0, image).filled(fill_value=0)
+    c = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[1]] == 255, image[:,:,[3]] > 0.001), [1, 1, 1, 1], [0, 0, 0, 0])==0, image).filled(fill_value=0) 
+    A = np.ma.masked_where(np.where(c[:,:,[3]] != 0, [1, 1, 1, 1], [0, 0, 0, 0]), np.power(c-get_image_het(c), 2)).filled(fill_value=0)
+
+    phi_1 = np.ma.masked_where(np.where(c[:,:,[3]] != 0, [1, 1, 1, 1], [0, 0, 0, 0]), v-v_het).filled(fill_value=0)
+    phi_1_shape = (phi_1.shape[0], phi_1.shape[1])
+    psi_1_r = CGD(np.reshape(phi_1[:,:,[0]], phi_1_shape), np.reshape(A[:,:,[0]], phi_1_shape))
+    psi_1_g = CGD(np.reshape(phi_1[:,:,[1]], phi_1_shape), np.reshape(A[:,:,[1]], phi_1_shape))
+    psi_1_b = CGD(np.reshape(phi_1[:,:,[2]], phi_1_shape), np.reshape(A[:,:,[2]], phi_1_shape))
+    psi_1 = np.dstack((psi_1_r, psi_1_g, psi_1_b))
+
+    phi_2 = np.ma.masked_where(np.where(c[:,:,[3]] != 0, [1, 1, 1, 1], [0, 0, 0, 0]), F).filled(fill_value=0)
+    phi_2_shape = (phi_2.shape[0], phi_2.shape[1])
+    psi_2_r = CGD(np.reshape(phi_2[:,:,[0]], phi_2_shape), np.reshape(A[:,:,[0]], phi_2_shape))
+    psi_2_g = CGD(np.reshape(phi_2[:,:,[1]], phi_2_shape), np.reshape(A[:,:,[1]], phi_2_shape))
+    psi_2_b = CGD(np.reshape(phi_2[:,:,[2]], phi_1_shape), np.reshape(A[:,:,[2]], phi_2_shape))
+    psi_2 = np.dstack((psi_2_r, psi_2_g, psi_2_b))
     
+    '''
+    9D. Extend psi_1 and psi_2 by zero-padding to get psi_het_1 and psi_het_2
+    '''
+    '''
+    9E. Compute
+      Kriging Component,
+        (u - v_het)^* = convolve(convolve(t, t_v_tilde^T), psi_het_1)
+        F^* = convolve(convolve(t, t_v_tilde^T), psi_het_2)
+        where
+          convolve(t, t_v_tilde^T) = 1/|w| SUMx elem(w INTER (w-h)) ((u(x+h) - v_het)(u(x) - v)het))^T
+    '''
+    
+    '''
+    9F. Fill M with values of v_het + (u - v_het)^* + F - F^*
+    '''
     if i ==1:
-      im = Image.fromarray(np.uint8(c))
+      im = Image.fromarray(np.uint8(psi_1))
       im.save(path_name + "/test.png")
       im.close()
 node.bypass(True)
