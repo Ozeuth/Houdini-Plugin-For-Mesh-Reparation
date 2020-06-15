@@ -75,6 +75,7 @@ if (pix):
     w = 3
     image = Image.open(path_name + "/opening_" + str(i) + ".png")
     image_size = image.size
+    image_arr = np.array(image)
     image.close()
     mcw = Image.new('RGB', image_size, color=(0, 0, 255))
     draw = ImageDraw.Draw(mcw)
@@ -89,9 +90,21 @@ if (pix):
     draw.line(edge_pixels, fill=(0, 255, 255), width= 2*w + 1)
     draw.line((edge_pixels[0], edge_pixels[len(edge_pixels)-1]), fill=(0, 255, 255), width= 2*w + 1)
     draw.polygon(edge_pixels, fill=(255, 0, 0), outline=None)
+
+    # Clear "void" pixel values, values on pixels that have zero alpha but non-zero rgb
+    mcw = np.array(mcw)
+    image = image_arr
+    mcw_alpha = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,0] < 0.01, np.array(image[:,:,3]) < 0.01), 1, 0), 
+      np.ones((mcw.shape[0], mcw.shape[1])) * 255).filled(fill_value=0)
+    mcw_alpha_stack = np.stack((mcw_alpha, mcw_alpha, mcw_alpha), axis=-1)
+    mcw = np.ma.masked_where(np.where(mcw_alpha_stack==0, 1, 0)==1, mcw).filled(fill_value=0)
+    mcw = np.dstack((mcw, mcw_alpha))
+    image = np.ma.masked_where(np.where(image[:,:,[3]] == 0, [1, 1, 1, 1], [0, 0, 0, 0])==1, image).filled(fill_value=0)
+
+    mcw = Image.fromarray(np.uint8(mcw))
     mcw.save(path_name + "/mcw_" + str(i) + ".png")
-    mcw.close()
-  
+    image = Image.fromarray(np.uint8(image))
+    image.save(path_name + "/opening_" + str(i) + ".png")
   '''
   9. 2D inpainting
     We follow B Galerne, A Leclaire[2017],
@@ -159,7 +172,7 @@ if (pix):
         where
           v = w restricted to u (w where u is opaque)
     '''
-    v = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[2]] == 255, image[:,:,[3]] > 0.001), [1, 1, 1, 1], [0, 0, 0, 0])==0, image).filled(fill_value=0)
+    v = np.ma.masked_where(np.where(mcw[:,:,[2]] == 255, [1, 1, 1, 1], [0, 0, 0, 0])==0, image).filled(fill_value=0)
     v_het = get_image_het(v)
     t_v = get_image_t(v)
     '''
@@ -205,12 +218,13 @@ if (pix):
         where
           convolve(t, t_v_tilde^T) = 1/|w| SUMx elem(w INTER (w-h)) ((u(x+h) - v_het)(u(x) - v)het))^T
     '''
-    
+
     '''
     9F. Fill M with values of v_het + (u - v_het)^* + F - F^*
+    '''
     '''
     if i ==1:
       im = Image.fromarray(np.uint8(psi_1))
       im.save(path_name + "/test.png")
-      im.close()
+      im.close()'''
 node.bypass(True)
