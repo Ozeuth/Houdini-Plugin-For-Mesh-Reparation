@@ -124,8 +124,9 @@ if (pix):
     t_image = np.zeros(image.shape)
     if not image_het:
       image_het = get_image_het(image)
-    t_image[:,:,...] = (np.maximum((image - image_het), t_image) / math.sqrt(image_num)) * 255
+    t_image[:,:,...] = (image - image_het) / math.sqrt(image_num)
     t_image[:,:,[3]] = image[:,:,[3]]
+    t_image = np.where(t_image[:,:,[3]] == 0, [0, 0, 0, 0], t_image)
     return t_image    
   
   def convolve2d_fft(A, B):
@@ -152,7 +153,7 @@ if (pix):
     while (r_curr > epsilon and k <= k_max):
       alpha = math.pow(r_curr, 2) / np.matmul(np.transpose(d), np.matmul(np.transpose(A), np.matmul(A, d)))
       psi = psi + np.matmul(alpha , d)
-      r = r - np.matmul(np.transpose(alpha), np.matmul(np.transpose(A), np.matmul(A, d)))
+      r = r - np.matmul(alpha, np.matmul(np.transpose(A), np.matmul(A, d)))
       d = r + (math.pow(np.linalg.norm(r, 2), 2) / math.pow(r_curr, 2)) * d
       k += 1
       r_curr = np.linalg.norm(r, 2)
@@ -183,7 +184,8 @@ if (pix):
     '''
     # TODO: Check if W is meant to be size of image, or a small window
     # TODO: Convolution should ignore pixels where alpha == 0
-    W = np.random.normal(0, 1, (image_size[0], image_size[1], 1)).astype(np.float32)
+    #W = np.random.normal(0, 1, (image_size[0], image_size[1], 1)).astype(np.float32)
+    W = np.random.normal(0, 1, (3, 3, 1)).astype(np.float32)
     F = convolve2d_fft(t_v, W)
     '''
     9C. Compute using CGD
@@ -206,25 +208,75 @@ if (pix):
     psi_2_g = CGD(np.reshape(phi_2[:,:,[1]], phi_2_shape), np.reshape(A[:,:,[1]], phi_2_shape))
     psi_2_b = CGD(np.reshape(phi_2[:,:,[2]], phi_1_shape), np.reshape(A[:,:,[2]], phi_2_shape))
     psi_2 = np.dstack((psi_2_r, psi_2_g, psi_2_b))
-    
     '''
-    9D. Extend psi_1 and psi_2 by zero-padding to get psi_het_1 and psi_het_2
+    9D. Extend psi_1 and psi_2 by zero-padding
     '''
+    x_diff = max(0, (cor_t_v.shape[0] - psi_1.shape[0]))
+    x_left = int(x_diff / 2)
+    x_right =  x_diff - x_left
+    y_diff = max(0, (cor_t_v.shape[1] - psi_1.shape[1]))
+    y_top = int(y_diff / 2)
+    y_bot = y_diff - y_top
+    psi_1 = np.pad(psi_1, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
+    psi_2 = np.pad(psi_2, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
     '''
     9E. Compute
       Kriging Component,
-        (u - v_het)^* = convolve(convolve(t, t_v_tilde^T), psi_het_1)
-        F^* = convolve(convolve(t, t_v_tilde^T), psi_het_2)
+        (u - v_het)^* = convolve(convolve(t_v, t_v_tilde^T), psi_1)
+      Innovation Component,
+        F^* = convolve(convolve(t_v, t_v_tilde^T), psi_2)
         where
-          convolve(t, t_v_tilde^T) = 1/|w| SUMx elem(w INTER (w-h)) ((u(x+h) - v_het)(u(x) - v)het))^T
+          convolve(t_v, t_v_tilde^T) = 1/|w| SUMx elem( wINTER(w-h) ) (u(x+h) - v_het)(u(x) - v_het)^T
     '''
+    image_num = np.sum(np.where(image[:,:,[3]] != 0, 1, 0))
+    cor_t_v = np.zeros((t_v.shape[0], t_v.shape[1], 3))
+    for x in range(t_v.shape[0]):
+      for y in range(t_v.shape[1]):
+        curr_cov_t_v = [0, 0, 0]
+        curr_t_v = t_v[x, y][:-1]
+        for x_window in range(x-1, x+2):
+          for y_window in range(y-1, y+2):
+            if (0 <= x_window < t_v.shape[0] and 0 <= y_window < t_v.shape[1] and t_v[x_window, y_window, 3] != 0):
+              curr_cov_t_v += curr_t_v * t_v[x_window, y_window][:-1]
+        cor_t_v[x, y] = curr_cov_t_v
 
+    print("CURR PSI SHAPE " + str(psi_1.shape))
+    print("CURR CONV_T_V SHAPE " + str(cor_t_v.shape))
+
+    x_diff = max(0, psi_1.shape[0] - cor_t_v.shape[0])
+    x_left = int(x_diff/2)
+    x_right = x_diff - x_left
+    y_diff = max(0, psi_1.shape[1] - cor_t_v.shape[1])
+    y_top = int(y_diff/2)
+    y_bot = y_diff - y_top
+
+    cor_t_v = np.pad(cor_t_v, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
+    F = np.pad(F[:,:,:3], ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
+    image = np.pad(image[:,:,:3], ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
+
+    kriging_comp_r = convolve2d_fft(cor_t_v[:,:,[0]], psi_1[:,:,[0]])
+    kriging_comp_g = convolve2d_fft(cor_t_v[:,:,[1]], psi_1[:,:,[1]])
+    kriging_comp_b = convolve2d_fft(cor_t_v[:,:,[2]], psi_1[:,:,[2]])
+    kriging_comp = np.dstack((kriging_comp_r, kriging_comp_g, kriging_comp_b))
+
+    innov_comp_r = convolve2d_fft(cor_t_v[:,:,[0]], psi_2[:,:,[0]])
+    innov_comp_g = convolve2d_fft(cor_t_v[:,:,[1]], psi_2[:,:,[1]])
+    innov_comp_b = convolve2d_fft(cor_t_v[:,:,[2]], psi_2[:,:,[2]])
+    innov_comp = np.dstack((innov_comp_r, innov_comp_g, innov_comp_b))
     '''
     9F. Fill M with values of v_het + (u - v_het)^* + F - F^*
     '''
-    '''
-    if i ==1:
-      im = Image.fromarray(np.uint8(psi_1))
+    # operands could not be broadcast together with shapes (122,122,3) (117,122,4) 
+    fill = v_het[:-1] + (kriging_comp + F - innov_comp)[:,:,...]
+    #image = np.where(mcw[:,:,... == [...,:255], fill[:,:,...], image[:,:,...])
+    if i ==1:   
+      im = Image.fromarray(np.uint8(kriging_comp))
+      im.save(path_name + "/test1.png")
+      im.close()
+      im = Image.fromarray(np.uint8(innov_comp))
+      im.save(path_name + "/test2.png")
+      im.close()
+      im = Image.fromarray(np.uint8(fill))
       im.save(path_name + "/test.png")
-      im.close()'''
+      im.close()
 node.bypass(True)
