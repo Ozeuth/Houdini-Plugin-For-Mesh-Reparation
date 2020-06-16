@@ -122,7 +122,7 @@ if (pix):
   def get_image_t(image, image_het=None):
     image_num = np.sum(np.where(image[:,:,[3]] != 0, 1, 0))
     t_image = np.zeros(image.shape)
-    if not image_het:
+    if image_het == None:
       image_het = get_image_het(image)
     t_image[:,:,...] = (image - image_het) / math.sqrt(image_num)
     t_image[:,:,[3]] = image[:,:,[3]]
@@ -175,16 +175,18 @@ if (pix):
     '''
     v = np.ma.masked_where(np.where(mcw[:,:,[2]] == 255, [1, 1, 1, 1], [0, 0, 0, 0])==0, image).filled(fill_value=0)
     v_het = get_image_het(v)
-    t_v = get_image_t(v)
+    t_v = get_image_t(v, v_het)
     '''
     9B. Draw Gaussian Sample,
       F = convolve(t_v, W)
       where
-        W = Gaussian White Noise
+        W = Normalized Gaussian White Noise
     '''
-    # TODO: Check if W is meant to be size of image, or a small window
-    #W = np.random.normal(0, 1, (image_size[0], image_size[1], 1)).astype(np.float32)
+    # TODO: Check if W is meant to be size of image, or a small window\
+    # TODO: I assume normalization here means by max and min (into the range -1 to 1)
+   '''
     W = np.random.normal(0, 1, (3, 3, 1)).astype(np.float32)
+    W = 2 * (W - np.min(W)) / (np.max(W) - np.min(W)) - 1
     F = np.zeros((t_v.shape[0], t_v.shape[1], 3))
     for x in range(t_v.shape[0]):
       for y in range(t_v.shape[1]):
@@ -198,18 +200,30 @@ if (pix):
             y_window_pos += 1
           x_window_pos += 1
         F[x, y] = curr_F
-    F = np.dstack((F, t_v[:,:,[3]]))
+    F = np.dstack((F, t_v[:,:,[3]]))'''
+    
+    W = np.random.normal(0, 1, (image_size[0], image_size[1], 1)).astype(np.float32)
+    W = 2 * (W - np.min(W)) / (np.max(W) - np.min(W)) - 1
+    F = convolve2d_fft(t_v, W)
+    F[:,:,[3]] = t_v[:,:,[3]]
+    F = np.where(F[:,:,[3]] == 0, [0, 0, 0, 0], F)
+
+    im = Image.fromarray(np.uint8(F))
+    im.save(path_name + "/" + str(i) + " F.png")
+    im.close()
     '''
     9C. Compute using CGD
-      psi_1 = gamma_t |cxc (v - v_het)
+      psi_1 = gamma_t |cxc (u|c - v_het)
       psi_2 = gamma_t |cxc (F|c)
     '''
     c = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[1]] == 255, v[:,:,[3]] > 0.001), [1, 1, 1, 1], [0, 0, 0, 0])==0, v).filled(fill_value=0) 
     A = np.ma.masked_where(np.where(c[:,:,[3]] != 0, [1, 1, 1], [0, 0, 0]), np.power((c-get_image_het(c))[:,:,:3], 2)).filled(fill_value=0)
+    A /= np.sum(np.where(c[:,:,[3]] != 0, 1, 0)) - 1
     A = np.dstack((A, c[:,:,[3]]))
+    # A is the covariance of F on C
 
     phi_1 = np.ma.masked_where(np.where(c[:,:,[3]] == 0, [1, 1, 1], [0, 0, 0]), (v-v_het)[:,:,:3]).filled(fill_value=0)
-    phi_1 = np.dstack((phi_1, v[:,:,[3]]))
+    phi_1 = np.dstack((phi_1, c[:,:,[3]]))
     phi_1_shape = (phi_1.shape[0], phi_1.shape[1])
     psi_1_r = CGD(np.reshape(phi_1[:,:,[0]], phi_1_shape), np.reshape(A[:,:,[0]], phi_1_shape))
     psi_1_g = CGD(np.reshape(phi_1[:,:,[1]], phi_1_shape), np.reshape(A[:,:,[1]], phi_1_shape))
@@ -254,7 +268,8 @@ if (pix):
             if (0 <= x_window < t_v.shape[0] and 0 <= y_window < t_v.shape[1] and t_v[x_window, y_window, 3] != 0):
               curr_cov_t_v += curr_t_v * t_v[x_window, y_window][:-1]
         cor_t_v[x, y] = curr_cov_t_v
-
+    #EH
+    cor_t_v = np.ma.masked_where(np.where(c[:,:,[3]] != 0, [1, 1, 1], [0, 0, 0]), cor_t_v).filled(fill_value=0)
     print("CURR PSI SHAPE " + str(psi_1.shape))
     print("CURR CONV_T_V SHAPE " + str(cor_t_v.shape))
 
@@ -269,6 +284,7 @@ if (pix):
     F = np.pad(F[:,:,:3], ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
     image = np.pad(image, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
     mcw =  np.pad(mcw[:,:,:3], ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
+
 
     kriging_comp_r = convolve2d_fft(cor_t_v[:,:,[0]], psi_1[:,:,[0]])
     kriging_comp_g = convolve2d_fft(cor_t_v[:,:,[1]], psi_1[:,:,[1]])
@@ -290,11 +306,18 @@ if (pix):
           result[x, y] = [fill[x, y][0], fill[x, y][1], fill[x, y][2], 255]
         else:
           result[x, y] = image[x, y]
+
+    im = Image.fromarray(np.uint8(u))
+    im.save(path_name + "/" + str(i) + " u.png")
+    im.close()
+    im = Image.fromarray(np.uint8(v))
+    im.save(path_name + "/" + str(i) + " v.png")
+    im.close()
     im = Image.fromarray(np.uint8(t_v))
     im.save(path_name + "/" + str(i) + " t_v.png")
     im.close()
-    im = Image.fromarray(np.uint8(F))
-    im.save(path_name + "/" + str(i) + " F.png")
+    im = Image.fromarray(np.uint8(cor_t_v))
+    im.save(path_name + "/" + str(i) + " cor_t_v.png")
     im.close()
     im = Image.fromarray(np.uint8(c))
     im.save(path_name + "/" + str(i) + " c.png")
