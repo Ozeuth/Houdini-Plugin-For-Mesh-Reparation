@@ -183,26 +183,41 @@ if (pix):
         W = Gaussian White Noise
     '''
     # TODO: Check if W is meant to be size of image, or a small window
-    # TODO: Convolution should ignore pixels where alpha == 0
     #W = np.random.normal(0, 1, (image_size[0], image_size[1], 1)).astype(np.float32)
     W = np.random.normal(0, 1, (3, 3, 1)).astype(np.float32)
-    F = convolve2d_fft(t_v, W)
+    F = np.zeros((t_v.shape[0], t_v.shape[1], 3))
+    for x in range(t_v.shape[0]):
+      for y in range(t_v.shape[1]):
+        curr_F = [0, 0, 0]
+        x_window_pos = 0
+        for x_window in range(x-1, x+2):
+          y_window_pos = 0
+          for y_window in range(y-1, y+2):
+            if (0 <= x_window < t_v.shape[0] and 0 <= y_window < t_v.shape[1] and t_v[x_window, y_window, 3] != 0):
+              curr_F += W[x_window_pos, y_window_pos, 0] * t_v[x_window, y_window][:-1]
+            y_window_pos += 1
+          x_window_pos += 1
+        F[x, y] = curr_F
+    F = np.dstack((F, t_v[:,:,[3]]))
     '''
     9C. Compute using CGD
       psi_1 = gamma_t |cxc (v - v_het)
       psi_2 = gamma_t |cxc (F|c)
     '''
-    c = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[1]] == 255, image[:,:,[3]] > 0.001), [1, 1, 1, 1], [0, 0, 0, 0])==0, image).filled(fill_value=0) 
-    A = np.ma.masked_where(np.where(c[:,:,[3]] != 0, [1, 1, 1, 1], [0, 0, 0, 0]), np.power(c-get_image_het(c), 2)).filled(fill_value=0)
+    c = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[1]] == 255, v[:,:,[3]] > 0.001), [1, 1, 1, 1], [0, 0, 0, 0])==0, v).filled(fill_value=0) 
+    A = np.ma.masked_where(np.where(c[:,:,[3]] != 0, [1, 1, 1], [0, 0, 0]), np.power((c-get_image_het(c))[:,:,:3], 2)).filled(fill_value=0)
+    A = np.dstack((A, c[:,:,[3]]))
 
-    phi_1 = np.ma.masked_where(np.where(c[:,:,[3]] != 0, [1, 1, 1, 1], [0, 0, 0, 0]), v-v_het).filled(fill_value=0)
+    phi_1 = np.ma.masked_where(np.where(c[:,:,[3]] == 0, [1, 1, 1], [0, 0, 0]), (v-v_het)[:,:,:3]).filled(fill_value=0)
+    phi_1 = np.dstack((phi_1, v[:,:,[3]]))
     phi_1_shape = (phi_1.shape[0], phi_1.shape[1])
     psi_1_r = CGD(np.reshape(phi_1[:,:,[0]], phi_1_shape), np.reshape(A[:,:,[0]], phi_1_shape))
     psi_1_g = CGD(np.reshape(phi_1[:,:,[1]], phi_1_shape), np.reshape(A[:,:,[1]], phi_1_shape))
     psi_1_b = CGD(np.reshape(phi_1[:,:,[2]], phi_1_shape), np.reshape(A[:,:,[2]], phi_1_shape))
     psi_1 = np.dstack((psi_1_r, psi_1_g, psi_1_b))
 
-    phi_2 = np.ma.masked_where(np.where(c[:,:,[3]] != 0, [1, 1, 1, 1], [0, 0, 0, 0]), F).filled(fill_value=0)
+    phi_2 = np.ma.masked_where(np.where(c[:,:,[3]] == 0, [1, 1, 1], [0, 0, 0]), F[:,:,:3]).filled(fill_value=0)
+    phi_2 = np.dstack((phi_2, c[:,:,[3]]))
     phi_2_shape = (phi_2.shape[0], phi_2.shape[1])
     psi_2_r = CGD(np.reshape(phi_2[:,:,[0]], phi_2_shape), np.reshape(A[:,:,[0]], phi_2_shape))
     psi_2_g = CGD(np.reshape(phi_2[:,:,[1]], phi_2_shape), np.reshape(A[:,:,[1]], phi_2_shape))
@@ -211,10 +226,10 @@ if (pix):
     '''
     9D. Extend psi_1 and psi_2 by zero-padding
     '''
-    x_diff = max(0, (cor_t_v.shape[0] - psi_1.shape[0]))
+    x_diff = max(0, (t_v.shape[0] - psi_1.shape[0]))
     x_left = int(x_diff / 2)
     x_right =  x_diff - x_left
-    y_diff = max(0, (cor_t_v.shape[1] - psi_1.shape[1]))
+    y_diff = max(0, (t_v.shape[1] - psi_1.shape[1]))
     y_top = int(y_diff / 2)
     y_bot = y_diff - y_top
     psi_1 = np.pad(psi_1, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
@@ -252,7 +267,8 @@ if (pix):
 
     cor_t_v = np.pad(cor_t_v, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
     F = np.pad(F[:,:,:3], ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
-    image = np.pad(image[:,:,:3], ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
+    image = np.pad(image, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
+    mcw =  np.pad(mcw[:,:,:3], ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
 
     kriging_comp_r = convolve2d_fft(cor_t_v[:,:,[0]], psi_1[:,:,[0]])
     kriging_comp_g = convolve2d_fft(cor_t_v[:,:,[1]], psi_1[:,:,[1]])
@@ -266,17 +282,45 @@ if (pix):
     '''
     9F. Fill M with values of v_het + (u - v_het)^* + F - F^*
     '''
-    # operands could not be broadcast together with shapes (122,122,3) (117,122,4) 
     fill = v_het[:-1] + (kriging_comp + F - innov_comp)[:,:,...]
-    #image = np.where(mcw[:,:,... == [...,:255], fill[:,:,...], image[:,:,...])
-    if i ==1:   
-      im = Image.fromarray(np.uint8(kriging_comp))
-      im.save(path_name + "/test1.png")
-      im.close()
-      im = Image.fromarray(np.uint8(innov_comp))
-      im.save(path_name + "/test2.png")
-      im.close()
-      im = Image.fromarray(np.uint8(fill))
-      im.save(path_name + "/test.png")
-      im.close()
+    result = np.zeros(image.shape)
+    for x in range(mcw.shape[0]):
+      for y in range(mcw.shape[1]):
+        if (mcw[x, y, 0]) == 255:
+          result[x, y] = [fill[x, y][0], fill[x, y][1], fill[x, y][2], 255]
+        else:
+          result[x, y] = image[x, y]
+    im = Image.fromarray(np.uint8(t_v))
+    im.save(path_name + "/" + str(i) + " t_v.png")
+    im.close()
+    im = Image.fromarray(np.uint8(F))
+    im.save(path_name + "/" + str(i) + " F.png")
+    im.close()
+    im = Image.fromarray(np.uint8(c))
+    im.save(path_name + "/" + str(i) + " c.png")
+    im.close()
+    im = Image.fromarray(np.uint8(A))
+    im.save(path_name + "/" + str(i) + " A.png")
+    im.close()
+    im = Image.fromarray(np.uint8(phi_1))
+    im.save(path_name + "/" + str(i) + " phi_1.png")
+    im.close()
+    im = Image.fromarray(np.uint8(phi_2))
+    im.save(path_name + "/" + str(i) + " phi_2.png")
+    im.close()
+    im = Image.fromarray(np.uint8(psi_1))
+    im.save(path_name + "/" + str(i) +  " psi_1.png")
+    im.close()
+    im = Image.fromarray(np.uint8(psi_2))
+    im.save(path_name + "/" + str(i) + " psi_2.png")
+    im.close()
+    im = Image.fromarray(np.uint8(kriging_comp))
+    im.save(path_name + "/" + str(i) + " kriging.png")
+    im.close()
+    im = Image.fromarray(np.uint8(innov_comp))
+    im.save(path_name + "/" + str(i) + " innov.png")
+    im.close()
+    im = Image.fromarray(np.uint8(result))
+    im.save(path_name + "/" + str(i) + " final.png")
+    im.close()
 node.bypass(True)
