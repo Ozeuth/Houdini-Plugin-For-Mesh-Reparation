@@ -111,31 +111,29 @@ if (pix):
       inpainting using Gaussian conditional simulation, relying on a Kriging framework
   '''
   # Some Helper functions
-  def get_image_num(image, alpha_dim = None):
-    if alpha_dim:
-      image_num = np.sum(np.where(image[:,:,[alpha_dim]] != 0, 1, 0))
-    else:
-      image_num = (image.size)
-    return image_num
+  def get_image_num(image, mask):
+    return np.sum(mask)
 
-  def get_image_het(image, image_dim, alpha_dim = None):
+  def get_image_het(image, mask, image_dim):
     image_het = np.zeros(image_dim)
     for d in range(image_dim):
-      image_het[d] = np.sum(image[:, :, d])
-    image_het = image_het / get_image_num(image, alpha_dim)
+      image_het[d] = np.sum(np.ma.masked_where(mask == 0, image[:, :,[d]]).filled(fill_value=0))
+    image_het = image_het / get_image_num(image, mask)
     return image_het
 
-  # alpha_dim = 3
-  def get_image_t(image, image_dim, image_het=None, alpha_dim=None):
+  def get_image_t(image, mask, image_dim, image_het=None):
     t_image = np.zeros(image.shape)
     if image_het == None:
-      image_het = get_image_het(image, image_dim)
-    t_image[:,:,...] = (image - image_het) / math.sqrt(get_image_num(image, alpha_dim))
-    if alpha_dim:
-      t_image[:,:,[alpha_dim]] = image[:,:,[alpha_dim]]
-      t_image = np.where(t_image[:,:,[alpha_dim]] == 0, [0] * image_dim, t_image)
+      image_het = get_image_het(image, mask, image_dim)
+    t_image[:,:,...] = np.ma.masked_where(mask==0, image-image_het).filled(fill_value=0) / math.sqrt(get_image_num(image, mask))
     return t_image    
   
+  def get_image_cleaned(image, alpha, image_dim, alpha_dim=None):
+    if alpha_dim:
+      image[:,:,[alpha_dim]] = alpha[:,:,[alpha_dim]]
+      image = np.where(image[:,:,[alpha_dim]] == 0, [0]*image_dim, image)
+    return image
+
   def convolve2d_fft(A, B):
     C = np.zeros((A.shape[0], A.shape[1], A.shape[2], B.shape[2]))
     f_B = np.zeros((A.shape[0], A.shape[1], B.shape[-1]), dtype=np.complex128)
@@ -249,6 +247,7 @@ if (pix):
       image_dim = image.shape[len(image.shape) - 1]
     if image_dim == 4:
       alpha_dim = 3
+    v_alpha = None
     '''
     9A. Compute
       v_het = 1/|w|*[SUMr_elem(w)(v(r)), SUMg_elem(g)(v(g)), SUMb_elem(b)(v(b))]
@@ -257,65 +256,46 @@ if (pix):
         where
           v = w restricted to u (w where u is opaque)
     '''
-    v = np.ma.masked_where(np.where(mcw[:,:,[2]] == 255, [1]*image_dim, [0]*image_dim)==0, image).filled(fill_value=0)
-    v_het = get_image_het(v, image_dim, alpha_dim)
-    t_v = get_image_t(v, image_dim, v_het, alpha_dim)
+    w_constraint = np.where(mcw[:,:,[2]] == 255, [1]*image_dim, [0]*image_dim)
+    v = np.ma.masked_where(w_constraint==0, image).filled(fill_value=0)
+    if alpha_dim != None: v_alpha = v[:,:,[alpha_dim]]
+    v_shape = (v.shape[0], v.shape[1], image_dim)
+
+    v_het = get_image_het(v, w_constraint, image_dim)
+    t_v = get_image_t(v, w_constraint, image_dim, v_het)
+    t_v = get_image_cleaned(t_v, v_alpha, image_dim, alpha_dim)
     '''
     9B. Draw Gaussian Sample,
       F = convolve(t_v, W)
       where
         W = Normalized Gaussian White Noise
     '''
-    # TODO: Check if W is meant to be size of image, or a small window
-    # TODO: I assume normalization here means by max and min (into the range -1 to 1) Or normalized as in, (value - value_het)/sqrt(value)?
-    '''
-    W = np.random.normal(0, 1, (3, 3, 1)).astype(np.float32)
-    W = 2 * (W - np.min(W)) / (np.max(W) - np.min(W)) - 1
-    F = np.zeros((t_v.shape[0], t_v.shape[1], 3))
-    for x in range(t_v.shape[0]):
-      for y in range(t_v.shape[1]):
-        curr_F = [0, 0, 0]
-        x_window_pos = 0
-        for x_window in range(x-1, x+2):
-          y_window_pos = 0
-          for y_window in range(y-1, y+2):
-            if (0 <= x_window < t_v.shape[0] and 0 <= y_window < t_v.shape[1] and t_v[x_window, y_window, 3] != 0):
-              curr_F += W[x_window_pos, y_window_pos, 0] * t_v[x_window, y_window][:-1]
-            y_window_pos += 1
-          x_window_pos += 1
-        F[x, y] = curr_F
-    F = np.dstack((F, t_v[:,:,[3]]))'''
-    
     W = np.random.normal(0, 1, (image_size[0], image_size[1], 1)).astype(np.float32)
-    W = 2 * (W - np.min(W)) / (np.max(W) - np.min(W)) - 1
-    F = convolve2d_fft(t_v, W)
-    if alpha_dim:
-      F[:,:,[alpha_dim]] = t_v[:,:,[alpha_dim]]
-      F = np.where(F[:,:,[alpha_dim]] == 0, [0, 0, 0, 0], F)
+    F = np.zeros(v_shape)
+    for dim in range(image_dim):
+      F[:,:,[dim]] = convolve2d_fft(t_v[:,:,[dim]], W)
+    F = get_image_cleaned(F, v_alpha, image_dim, alpha_dim)
     '''
     9C. Compute using CGD
       psi_1 = gamma_t |cxc (u|c - v_het)
       psi_2 = gamma_t |cxc (F|c)
     '''
-    if alpha_dim:
-      c = np.ma.masked_where(np.where(np.logical_and(mcw[:,:,[1]] == 255, v[:,:,[3]] > 0.001), [1]*image_dim, [0]*image_dim)==0, v).filled(fill_value=0) 
-      constraint = np.where(c[:,:,[3]] == 0, [1]*image_dim, [0]*image_dim)
-    else:
-      c = np.ma.masked_where(np.where(mcw[:,:,[1]] == 255, [1]*image_dim, [0]*image_dim)==0, v).filled(fill_value=0)
-      constraint = np.where(mcw[:,:,[1]] == 255, [1]*image_dim, [0]*image_dim)==0
+    c_constraint = np.where(mcw[:,:,[1]] == 255, [1]*image_dim, [0]*image_dim)
+    c = np.ma.masked_where(c_constraint==0, v).filled(fill_value=0)
 
-    F_c = np.ma.masked_where(constraint, F).filled(fill_value=0)
-    # TODO: Only works for grayscale, square images
-    A = np.cov(F_c.reshape(F_c.shape[0], F_c.shape[1]))
+    A = np.zeros(v_shape)
+    for dim in range(image_dim):
+      A[:,:,[dim]] = np.real(np.fft.ifft2(np.power(np.abs(np.fft.fft2(t_v[:,:,[dim]])),2)))
 
-    phi_1 = np.ma.masked_where(constraint, (v-v_het)).filled(fill_value=0)
+    F_c = np.ma.masked_where(c_constraint==0, F).filled(fill_value=0)
+
+    phi_1 = np.ma.masked_where(c_constraint==0, (v-v_het)).filled(fill_value=0)
     if alpha_dim:
       phi_1[:,:,[alpha_dim]] = c[:,:,[alpha_dim]]
     phi_1_shape = (phi_1.shape[0], phi_1.shape[1])
     psi_1 = []
     for dim in range(image_dim):
-      psi_1_curr = CGD(phi_1[:,:,dim], A)
-      #psi_1_curr = CGD(np.reshape(phi_1[:,:,[dim]], phi_1_shape), np.reshape(A[:,:,...], phi_1_shape))
+      psi_1_curr = CGD(phi_1[:,:,dim], A[:,:,dim])
       psi_1.append(psi_1_curr)
     psi_1 = np.dstack(tuple(psi_1))
 
@@ -325,8 +305,7 @@ if (pix):
     phi_2_shape = (phi_2.shape[0], phi_2.shape[1])
     psi_2 = []
     for dim in range(image_dim):
-      psi_2_curr = CGD(phi_1[:,:,dim], A)
-      #psi_2_curr = CGD(np.reshape(phi_2[:,:,[dim]], phi_2_shape), np.reshape(A[:,:,...], phi_2_shape))
+      psi_2_curr = CGD(phi_1[:,:,dim], A[:,:,dim])
       psi_2.append(psi_2_curr)
     psi_2 = np.dstack(tuple(psi_2))
     '''
@@ -368,8 +347,6 @@ if (pix):
       cor_t_v[:,:,alpha_dim] = t_v[:,:,alpha_dim]
       cor_t_v = np.where(cor_t_v[:,:,[alpha_dim]] == 0, [0, 0, 0, 0], cor_t_v)
 
-    print("CURR PSI SHAPE " + str(psi_1.shape))
-    print("CURR CONV_T_V SHAPE " + str(cor_t_v.shape))
     kriging_comp = []
     for dim in range(image_dim):
       kriging_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_1[:,:,[dim]])
