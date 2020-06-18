@@ -283,11 +283,8 @@ if (pix):
     c_constraint = np.where(mcw[:,:,[1]] == 255, [1]*image_dim, [0]*image_dim)
     c = np.ma.masked_where(c_constraint==0, v).filled(fill_value=0)
 
-    A = np.zeros(v_shape)
-    for dim in range(image_dim):
-      A[:,:,[dim]] = np.real(np.fft.ifft2(np.power(np.abs(np.fft.fft2(t_v[:,:,[dim]])),2)))
-
     F_c = np.ma.masked_where(c_constraint==0, F).filled(fill_value=0)
+    A = np.cov(F_c.reshape(F_c.shape[0], F_c.shape[1]))
 
     phi_1 = np.ma.masked_where(c_constraint==0, (v-v_het)).filled(fill_value=0)
     if alpha_dim:
@@ -295,7 +292,7 @@ if (pix):
     phi_1_shape = (phi_1.shape[0], phi_1.shape[1])
     psi_1 = []
     for dim in range(image_dim):
-      psi_1_curr = CGD(phi_1[:,:,dim], A[:,:,dim])
+      psi_1_curr = CGD(phi_1[:,:,dim], A)
       psi_1.append(psi_1_curr)
     psi_1 = np.dstack(tuple(psi_1))
 
@@ -305,7 +302,7 @@ if (pix):
     phi_2_shape = (phi_2.shape[0], phi_2.shape[1])
     psi_2 = []
     for dim in range(image_dim):
-      psi_2_curr = CGD(phi_1[:,:,dim], A[:,:,dim])
+      psi_2_curr = CGD(phi_1[:,:,dim], A)
       psi_2.append(psi_2_curr)
     psi_2 = np.dstack(tuple(psi_2))
     '''
@@ -328,7 +325,55 @@ if (pix):
         where
           convolve(t_v, t_v_tilde^T) = 1/|w| SUMx elem( wINTER(w-h) ) (u(x+h) - v_het)(u(x) - v_het)^T
     '''
-    image_num = get_image_num(image, alpha_dim)
+    t_v_num = get_image_num(t_v, c_constraint)
+    cor_t_v = np.zeros(v_shape)
+    for dim in range(image_dim):
+      cor_t_v[:,:,[dim]] = np.real(np.fft.ifft2(np.power(np.abs(np.fft.fft2(t_v[:,:,[dim]])),2)))
+
+    v_1 = []
+    v_2 = []
+    for dim in range(image_dim):
+      v_1.append(np.zeros((1, t_v_num)))
+      v_2.append(np.zeros((1, t_v_num)))
+    v_1 = np.dstack(tuple(v_1))
+    v_2 = np.dstack(tuple(v_2))
+
+    min_c_x = mcw.shape[0]
+    min_c_y = mcw.shape[1]
+    max_c_x = 0
+    max_c_y = 0
+    for x in range(mcw.shape[0]):
+      for y in range(mcw.shape[1]):
+        if (mcw[x, y, 1] == 255):
+          min_c_x = min(min_c_x, x)
+          min_c_y = min(min_c_y, y)
+          max_c_x = max(max_c_x, x)
+          max_c_y = max(max_c_y, y)
+
+    z = 0
+    for x in range(min_c_x, max_c_x + 1):
+      for y in range(min_c_y, max_c_y + 1):
+        if (mcw[x, y, 1] == 255):
+          for dim in range(image_dim):
+            v_1[dim, z, 0] = cor_t_v[x - min_c_x, y - min_c_y, dim]
+            if (y - max_c_y == 0):
+              v_2[dim, z, 0] = cor_t_v[x - min_c_x, 0, dim]
+            else:  
+              v_2[dim, z, 0] = cor_t_v[x - min_c_x, y - max_c_y + t_v.shape[1], dim]
+          z += 1
+    
+    gam_cond = []
+    for dim in range(image_dim):
+      gam_cond.append(np.zeros((t_v_num, t_v_num)))
+    gam_cond = np.dstack(tuple(gam_cond))
+    '''
+    z = 0
+    for x in range(min_c_x, max_c_x):
+      for y in range(min_c_y, max_c_y):
+        if (mcw[x, y, 1] == 255):
+
+          z += 1'''
+
     cor_t_v = np.zeros((t_v.shape[0], t_v.shape[1], image_dim))
     for x in range(t_v.shape[0]):
       for y in range(t_v.shape[1]):
