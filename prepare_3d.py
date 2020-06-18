@@ -29,7 +29,7 @@ if not os.path.exists(path_name):
 boundaries = inputs[1].geometry().pointGroups()
 try:
   for excess in range(len(boundaries-1), len(glob.glob(path_name + "/*.png"))):
-    os.remove(path_name + "/opening_" + str(excess) + ".png")
+    os.remove(path_name + "/" + str(excess) + "_opening.png")
 except:
   for f in glob.glob(path_name + "/*.png"):
     os.remove(f)
@@ -152,7 +152,7 @@ for boundary in boundaries:
     render = hou.node("/out/oz_render_" + str(i))
   else:
     render = hou.node("/out").createNode("ifd", "oz_render_" + str(i))
-  image_path = path_name + "/opening_" + str(i) + ".png"
+  image_path = path_name + "/" + str(i) + "_opening.png"
   if (not os.path.isfile(image_path)):
     temp_img = Image.new('RGB', (60,30), color=(0, 0, 0))
     draw = ImageDraw.Draw(temp_img)
