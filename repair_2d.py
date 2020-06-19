@@ -1,6 +1,7 @@
 import glob
 import math
 import numpy as np
+from itertools import combinations
 import os
 from PIL import Image, ImageDraw
 def get_image_num(image, mask):
@@ -55,6 +56,47 @@ def CGD(phi, A, k_max=1000, epsilon=0.01):
     k += 1
     r_curr = np.linalg.norm(r, 2)
   return psi
+
+def diag(A):
+  diagonal = np.zeros(A.shape)
+  for x in range(A.shape[0]):
+    for y in range(A.shape[1]):
+      if x == y:
+        diagonal[x, y] = A[x, y]
+  return diagonal
+
+def upper_tri(v):
+  v_len = v.shape[0]
+  vA = np.zeros((v_len * v_len, 1))
+  for i in range(v_len):
+    for i_ in range(i, (v_len-i)*v_len, v_len+1):
+      vA[i_, 0] = v[i]
+  A = vA.reshape((v_len, v_len))
+  return A
+
+def lower_tri(v):
+  A = np.matrix(upper_tri(np.flip(v)))
+  A = A.getH()
+  A = np.array(A)
+  B = A - diag(A)
+  return B
+
+def lss(A, b):
+  num_vars = A.shape[1]
+  rank = np.linalg.matrix_rank(A)
+  if rank == num_vars:              
+    sol = np.linalg.lstsq(A, b)[0] # not under-determined
+    return (sol, True)
+  else:
+    sols = []
+    for nz in combinations(range(num_vars), rank):# the variables not set to zero
+      try: 
+        sol = np.zeros((num_vars, 1))
+        sol[nz, :] = np.asarray(np.linalg.solve(A[:, nz], b))
+        sols.append(sol)
+      except np.linalg.LinAlgError:
+        pass # picked bad variables, can't solve
+    return (sols, False)
 
 class Inpainter():
   def __init__(self, path_name, image_match="opening", mcw_match="mcw", alpha_dim=None):
@@ -181,62 +223,10 @@ class Inpainter():
         psi_2 = gamma_t |cxc (F|c)
       '''
       c_constraint = np.where(mcw[:,:,[1]] == 255, [1]*image_dim, [0]*image_dim)
-      c = np.ma.masked_where(c_constraint==0, v).filled(fill_value=0)
-
-      F_c = np.ma.masked_where(c_constraint==0, F).filled(fill_value=0)
-      A = np.cov(F_c.reshape(F_c.shape[0], F_c.shape[1]))
-
-      phi_1 = np.ma.masked_where(c_constraint==0, (v-v_het)).filled(fill_value=0)
-      if alpha_dim:
-        phi_1[:,:,[alpha_dim]] = c[:,:,[alpha_dim]]
-      phi_1_shape = (phi_1.shape[0], phi_1.shape[1])
-      psi_1 = []
-      for dim in range(image_dim):
-        psi_1_curr = CGD(phi_1[:,:,dim], A)
-        psi_1.append(psi_1_curr)
-      psi_1 = np.dstack(tuple(psi_1))
-
-      phi_2 = F_c
-      if alpha_dim:
-        phi_2[:,:,[alpha_dim]] = c[:,:,[alpha_dim]]
-      phi_2_shape = (phi_2.shape[0], phi_2.shape[1])
-      psi_2 = []
-      for dim in range(image_dim):
-        psi_2_curr = CGD(phi_1[:,:,dim], A)
-        psi_2.append(psi_2_curr)
-      psi_2 = np.dstack(tuple(psi_2))
-      '''
-      9D. Extend psi_1 and psi_2 by zero-padding
-      '''
-      x_diff = max(0, (t_v.shape[0] - psi_1.shape[0]))
-      x_left = int(x_diff / 2)
-      x_right =  x_diff - x_left
-      y_diff = max(0, (t_v.shape[1] - psi_1.shape[1]))
-      y_top = int(y_diff / 2)
-      y_bot = y_diff - y_top
-      psi_1 = np.pad(psi_1, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
-      psi_2 = np.pad(psi_2, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
-      '''
-      9E. Compute
-        Kriging Component,
-          (u - v_het)^* = convolve(convolve(t_v, t_v_tilde^T), psi_1)
-        Innovation Component,
-          F^* = convolve(convolve(t_v, t_v_tilde^T), psi_2)
-          where
-            convolve(t_v, t_v_tilde^T) = 1/|w| SUMx elem( wINTER(w-h) ) (u(x+h) - v_het)(u(x) - v_het)^T
-      '''
       t_v_num = get_image_num(t_v, c_constraint)
       cor_t_v = np.zeros(v_shape)
       for dim in range(image_dim):
         cor_t_v[:,:,[dim]] = np.real(np.fft.ifft2(np.power(np.abs(np.fft.fft2(t_v[:,:,[dim]])),2)))
-
-      v_1 = []
-      v_2 = []
-      for dim in range(image_dim):
-        v_1.append(np.zeros((1, t_v_num)))
-        v_2.append(np.zeros((1, t_v_num)))
-      v_1 = np.dstack(tuple(v_1))
-      v_2 = np.dstack(tuple(v_2))
 
       min_c_x = mcw.shape[0]
       min_c_y = mcw.shape[1]
@@ -250,80 +240,134 @@ class Inpainter():
             max_c_x = max(max_c_x, x)
             max_c_y = max(max_c_y, y)
 
+      v_1 = []
+      v_2 = []
+      for dim in range(image_dim):
+        v_1.append(np.zeros((1, t_v_num)))
+        v_2.append(np.zeros((1, t_v_num)))
+      v_1 = np.dstack(tuple(v_1))
+      v_2 = np.dstack(tuple(v_2))
       z = 0
       for x in range(min_c_x, max_c_x + 1):
         for y in range(min_c_y, max_c_y + 1):
           if (mcw[x, y, 1] == 255):
             for dim in range(image_dim):
-              v_1[dim, z, 0] = cor_t_v[x - min_c_x, y - min_c_y, dim]
+              v_1[0, z, dim] = cor_t_v[x - min_c_x, y - min_c_y, dim]
               if (y - max_c_y == 0):
-                v_2[dim, z, 0] = cor_t_v[x - min_c_x, 0, dim]
+                v_2[0, z, dim] = cor_t_v[x - min_c_x, 0, dim]
               else:  
-                v_2[dim, z, 0] = cor_t_v[x - min_c_x, y - max_c_y + t_v.shape[1], dim]
+                v_2[0, z, dim] = cor_t_v[x - min_c_x, y - max_c_y + t_v.shape[1], dim]
             z += 1
-      
+
       gam_cond = []
       for dim in range(image_dim):
-        gam_cond.append(np.zeros((t_v_num, t_v_num)))
+        gam_cond.append(np.zeros((t_v_num, t_v_num, 2)))
+      gam_cond = np.array(gam_cond)
+
+      gam_cond = []
+      for dim in range(image_dim):
+        U_curr = upper_tri(v_1[0,:,dim])
+        L_curr = lower_tri(v_2[0,:,dim])
+        gam_cond_curr = U_curr + L_curr
+        gam_cond.append(gam_cond_curr)
       gam_cond = np.dstack(tuple(gam_cond))
+
+      for dim in range(image_dim):
+        gam_cond[:,:,dim] = np.transpose(gam_cond[:,:,dim]) + gam_cond[:,:,dim] - diag(gam_cond[:,:,dim])
+      
       '''
       z = 0
       for x in range(min_c_x, max_c_x):
-        for y in range(x):
-      
         for y in range(min_c_y, max_c_y):
           if (mcw[x, y, 1] == 255):
+            # valid fixed point
+            z_ = 0
+            for x_ in range(min_c_x, x):
+              for y_ in range(min_c_y, y):
+                if (mcw[x_, y_, 1] == 255):
+                  # valid compared point
+                  for dim in range(image_dim):
+                    gam_cond[z, z_, dim] = [0, 0]
+                  z_ += 1
+            z_ = 0
+            for x_ in range(min_c_x, max_c_x):
+              for y_ in range(min_c_y, max_c_y):
+                if (mcw[x_, y_, 1] == 255):
+                  # valid compared point
+                  z_diff = z_ - z
+                  for dim in range(image_dim):
+                    M_temp1_curr = upper_tri(v_1[_,_,dim])
+                    gam_cond[_,_,dim] = M_temp1_curr
+                    if (x_ > x): # Tentative
+                      M_temp2_curr = lower_tri(v_2[_,_,dim])
+                      gam_cond[_,_,dim] += M_temp2_curr
+                  z_ += 1
+            z += 1
 
-            z += 1'''
-
-      cor_t_v = np.zeros((t_v.shape[0], t_v.shape[1], image_dim))
-      for x in range(t_v.shape[0]):
-        for y in range(t_v.shape[1]):
-          curr_cor_t_v = [0] * image_dim
-          curr_t_v = t_v[x, y]
-          for x_window in range(x-1, x+2):
-            for y_window in range(y-1, y+2):
-              if (0 <= x_window < t_v.shape[0] and 0 <= y_window < t_v.shape[1]):
-                if (alpha_dim):
-                  if (t_v[x_window, y_window, alpha_dim] != 0):
-                    curr_cor_t_v += curr_t_v * t_v[x_window, y_window]
-                else:
-                  curr_cor_t_v += curr_t_v * t_v[x_window, y_window]
-          cor_t_v[x, y] = curr_cor_t_v
-      if alpha_dim:
-        cor_t_v[:,:,alpha_dim] = t_v[:,:,alpha_dim]
-        cor_t_v = np.where(cor_t_v[:,:,[alpha_dim]] == 0, [0, 0, 0, 0], cor_t_v)
-
-      # Kriging Comp
-      '''
+      for dim in range(image_dim):
+        gam_cond[:,:,dim] = np.transpose(gam_cond[:,:,dim]) + gam_cond[:,:,dim] - diag(gam_cond[:,:,dim])'''
+      
       u_cond = []
       F_cond = []
       for dim in range(image_dim):
-        u_cond.append(np.zeros((t_v_num, 1)))
-        F_cond.append(np.zeros((t_v_num, 1)))
+        #u_cond.append(np.zeros((1, t_v_num)))
+        #F_cond.append(np.zeros((1, t_v_num)))
+        u_cond.append(np.zeros(t_v_num))
+        F_cond.append(np.zeros(t_v_num))
       u_cond = np.dstack(tuple(u_cond))
       F_cond = np.dstack(tuple(F_cond))
       z = 0
-      print(u_cond.shape)
-      print(F_cond.shape)
       for x in range(min_c_x, max_c_x):
         for y in range(min_c_y, max_c_y):
           if mcw[x, y, 1] == 255:
             for dim in range(image_dim):
-
-              u_cond[dim, z, 0] = v[x, y, dim]
-              F_cond[dim, z, 0] = F[x, y, dim]
-            z += 1'''
-
+              u_cond[0, z, dim] = v[x, y, dim]
+              F_cond[0, z, dim] = F[x, y, dim]
+            z += 1
+      
+      psi_1 = []
+      psi_2 = []
+      for dim in range(image_dim):
+        sol, is_singular = lss(gam_cond[:,:,dim], np.transpose(u_cond[:,:,dim] - v_het[dim]))
+        if is_singular:
+          psi_1_curr = sol
+        sol, is_singular = lss(gam_cond[:,:,dim], np.transpose(F_cond[:,:,dim]))
+        if is_singular:
+          psi_2_curr = sol
+        psi_1.append(psi_1_curr)
+        psi_2.append(psi_2_curr)
+      psi_1 = np.dstack(tuple(psi_1))
+      psi_2 = np.dstack(tuple(psi_2))
+      '''
+      9D. Extend psi_1 and psi_2 by zero-padding
+      '''
+      '''
+      x_diff = max(0, (t_v.shape[0] - psi_1.shape[0]))
+      x_left = int(x_diff / 2)
+      x_right =  x_diff - x_left
+      y_diff = max(0, (t_v.shape[1] - psi_1.shape[1]))
+      y_top = int(y_diff / 2)
+      y_bot = y_diff - y_top
+      psi_1 = np.pad(psi_1, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
+      psi_2 = np.pad(psi_2, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')'''
+      '''
+      9E. Compute
+        Kriging Component,
+          (u - v_het)^* = convolve(convolve(t_v, t_v_tilde^T), psi_1)
+        Innovation Component,
+          F^* = convolve(convolve(t_v, t_v_tilde^T), psi_2)
+          where
+            convolve(t_v, t_v_tilde^T) = 1/|w| SUMx elem( wINTER(w-h) ) (u(x+h) - v_het)(u(x) - v_het)^T
+      '''
       kriging_comp = []
       for dim in range(image_dim):
         kriging_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_1[:,:,[dim]])
         kriging_comp.append(kriging_comp_curr)
       kriging_comp = np.dstack(tuple(kriging_comp))
-
+      
       innov_comp = []
       for dim in range(image_dim):
-        innov_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_2[:,:,[dim]])
+        innov_comp_curr = F[:,:,[dim]] - convolve2d_fft(cor_t_v[:,:,[dim]], psi_2[:,:,[dim]])
         innov_comp.append(innov_comp_curr)
       innov_comp = np.dstack(tuple(innov_comp))
       '''
