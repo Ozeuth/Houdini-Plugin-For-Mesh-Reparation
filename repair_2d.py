@@ -28,20 +28,10 @@ def get_image_cleaned(image, alpha, image_dim, alpha_dim=None):
   return image
 
 def convolve2d_fft(A, B):
-  C = np.zeros((A.shape[0], A.shape[1], A.shape[2], B.shape[2]))
-  f_B = np.zeros((A.shape[0], A.shape[1], B.shape[-1]), dtype=np.complex128)
-  for i_M in np.arange(B.shape[-1]):
-    f_B[:, :, i_M] = np.fft.fft2(B[:, :, i_M], s=A.shape[:2])
-          
-  for i_N in np.arange(A.shape[-1]):
-    f_A = np.fft.fft2(A[:, :, i_N])
-    for i_M in np.arange(B.shape[-1]):
-      C[:, :, i_N, i_M] = np.real(np.fft.ifft2(f_A*f_B[:, :, i_M]))
-
-  if (B.shape[2] == 1):
-    return C.reshape((A.shape[0], A.shape[1], A.shape[2]))
-  else:
-    return C
+  tfA = np.fft.fft2(A)
+  tfB = np.fft.fft2(B)
+  tfC = np.multiply(tfA, tfB)
+  return np.real(np.fft.ifft2(tfC))
 
 def CGD(phi, A, k_max=1000, epsilon=0.01):
   k, psi  = 0, 0
@@ -105,7 +95,7 @@ class Inpainter():
     self.image_paths = glob.glob(path_name + "/*" + image_match + ".png")
     self.mcw_paths = glob.glob(path_name + "/*" + mcw_match + ".png")
 
-  def debug(self, image_name, image_dim, v=None, t_v=None, F=None, cor_t_v=None, c=None, A=None, phi_1=None, phi_2=None, psi_1=None, psi_2=None, kriging_comp=None, innov_comp=None, result=None):
+  def debug(self, image_name, image_dim, v=None, t_v=None, F=None, cor_t_v=None, c=None, A=None, psi_1=None, psi_2=None, kriging_comp=None, innov_comp=None, result=None):
     #self.debug(image_name, image_dim, v, t_v, F, cor_t_v, c, A, phi_1, phi_2, psi_1, psi_2, kriging_comp, innov_comp, result)
     if image_dim == 1:
       if v is not None: v = v.reshape((v.shape[0], v.shape[1]))
@@ -114,8 +104,6 @@ class Inpainter():
       if cor_t_v is not None: cor_t_v = cor_t_v.reshape((cor_t_v.shape[0], cor_t_v.shape[1]))
       if c is not None: c = c.reshape((c.shape[0], c.shape[1]))
       if A is not None: A = A.reshape((A.shape[0], A.shape[1]))
-      if phi_1 is not None: phi_1 = phi_1.reshape((phi_1.shape[0], phi_1.shape[1]))
-      if phi_2 is not None: phi_2 = phi_2.reshape((phi_2.shape[0], phi_2.shape[1]))
       if psi_1 is not None: psi_1 = psi_1.reshape((psi_1.shape[0], psi_1.shape[1]))
       if psi_2 is not None: psi_2 = psi_2.reshape((psi_2.shape[0], psi_2.shape[1]))
       if kriging_comp is not None: kriging_comp = kriging_comp.reshape((kriging_comp.shape[0], kriging_comp.shape[1]))
@@ -145,14 +133,6 @@ class Inpainter():
       im = Image.fromarray(np.uint8(A))
       im.save(self.path_name + "/" + str(image_name) + " A.png")
       im.close()
-    if phi_1 is not None:
-      im = Image.fromarray(np.uint8(phi_1))
-      im.save(self.path_name + "/" + str(image_name) + " phi_1.png")
-      im.close()
-    if phi_2 is not None:
-      im = Image.fromarray(np.uint8(phi_2))
-      im.save(self.path_name + "/" + str(image_name) + " phi_2.png")
-      im.close()
     if psi_1 is not None:
       im = Image.fromarray(np.uint8(psi_1))
       im.save(self.path_name + "/" + str(image_name) +  " psi_1.png")
@@ -181,7 +161,7 @@ class Inpainter():
       inpainting using Gaussian conditional simulation, relying on a Kriging framework
     '''
     for (image_path, mcw_path) in list(zip(self.image_paths, self.mcw_paths)):
-      v = t_v = cor_t_v = c = A = phi_1 = phi_2 = psi_1 = psi_2 = kriging_comp = innov_comp = result = alpha_dim = None
+      v = t_v = cor_t_v = c = A = psi_1 = psi_2 = kriging_comp = innov_comp = result = alpha_dim = None
       image = Image.open(image_path).convert('L')
       image_name = os.path.splitext(os.path.basename(image_path))[0]
       image = np.array(image)
@@ -355,6 +335,8 @@ class Inpainter():
         psi_2_.append(psi_2_curr_)
       psi_1_ = np.dstack(tuple(psi_1_))
       psi_2_ = np.dstack(tuple(psi_2_))
+      psi_1 = psi_1_
+      psi_2 = psi_2_
       '''
       9E. Compute
         Kriging Component,
@@ -386,7 +368,7 @@ class Inpainter():
             result[x, y] = fill[x, y]
           else:
             result[x, y] = image[x, y]
-      self.debug(image_name, image_dim, v, t_v, F, cor_t_v, c, A, phi_1, phi_2, psi_1_, psi_2_, kriging_comp, innov_comp, result)
+      self.debug(image_name, image_dim, v, t_v, F, cor_t_v, c, A, psi_1, psi_2, kriging_comp, innov_comp, result)
 
 if __name__ == "__main__":
   inpainter = Inpainter("C:\\Users\\Ozeuth\\Python-Houdini-Mesh-Repair\\demo_inpaint")
