@@ -310,8 +310,6 @@ class Inpainter():
       u_cond = []
       F_cond = []
       for dim in range(image_dim):
-        #u_cond.append(np.zeros((1, t_v_num)))
-        #F_cond.append(np.zeros((1, t_v_num)))
         u_cond.append(np.zeros(t_v_num))
         F_cond.append(np.zeros(t_v_num))
       u_cond = np.dstack(tuple(u_cond))
@@ -341,15 +339,22 @@ class Inpainter():
       '''
       9D. Extend psi_1 and psi_2 by zero-padding
       '''
-      '''
-      x_diff = max(0, (t_v.shape[0] - psi_1.shape[0]))
-      x_left = int(x_diff / 2)
-      x_right =  x_diff - x_left
-      y_diff = max(0, (t_v.shape[1] - psi_1.shape[1]))
-      y_top = int(y_diff / 2)
-      y_bot = y_diff - y_top
-      psi_1 = np.pad(psi_1, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')
-      psi_2 = np.pad(psi_2, ((x_left, x_right), (y_top, y_bot), (0, 0)), 'constant')'''
+      psi_1_ = []
+      psi_2_ = []
+      for dim in range(image_dim):
+        psi_1_curr_ = np.zeros((t_v.shape[0], t_v.shape[1]))
+        psi_2_curr_ = np.zeros((t_v.shape[0], t_v.shape[1]))
+        z = 0
+        for x in range(mcw.shape[0]):
+          for y in range(mcw.shape[1]):
+            if mcw[x, y, 1] == 255:
+              psi_1_curr_[x, y] = psi_1[z,:,dim]
+              psi_2_curr_[x, y] = psi_2[z,:,dim]
+              z += 1
+        psi_1_.append(psi_1_curr_)
+        psi_2_.append(psi_2_curr_)
+      psi_1_ = np.dstack(tuple(psi_1_))
+      psi_2_ = np.dstack(tuple(psi_2_))
       '''
       9E. Compute
         Kriging Component,
@@ -361,13 +366,13 @@ class Inpainter():
       '''
       kriging_comp = []
       for dim in range(image_dim):
-        kriging_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_1[:,:,[dim]])
+        kriging_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_1_[:,:,[dim]]) + v_het[dim]
         kriging_comp.append(kriging_comp_curr)
       kriging_comp = np.dstack(tuple(kriging_comp))
       
       innov_comp = []
       for dim in range(image_dim):
-        innov_comp_curr = F[:,:,[dim]] - convolve2d_fft(cor_t_v[:,:,[dim]], psi_2[:,:,[dim]])
+        innov_comp_curr = F[:,:,[dim]] - convolve2d_fft(cor_t_v[:,:,[dim]], psi_2_[:,:,[dim]]) + v_het[dim]
         innov_comp.append(innov_comp_curr)
       innov_comp = np.dstack(tuple(innov_comp))
       '''
@@ -381,7 +386,7 @@ class Inpainter():
             result[x, y] = fill[x, y]
           else:
             result[x, y] = image[x, y]
-      self.debug(image_name, image_dim, v, t_v, F, cor_t_v, c, A, phi_1, phi_2, psi_1, psi_2, kriging_comp, innov_comp, result)
+      self.debug(image_name, image_dim, v, t_v, F, cor_t_v, c, A, phi_1, phi_2, psi_1_, psi_2_, kriging_comp, innov_comp, result)
 
 if __name__ == "__main__":
   inpainter = Inpainter("C:\\Users\\Ozeuth\\Python-Houdini-Mesh-Repair\\demo_inpaint")
