@@ -12,14 +12,7 @@ def get_image_het(image, mask, image_dim):
   for d in range(image_dim):
     image_het[d] = np.sum(np.ma.masked_where(mask == 0, image[:, :,[d]]).filled(fill_value=0))
   image_het = image_het / get_image_num(image, mask)
-  return image_het
-
-def get_image_t(image, mask, image_dim, image_het=None):
-  t_image = np.zeros(image.shape)
-  if image_het == None:
-    image_het = get_image_het(image, mask, image_dim)
-  t_image[:,:,...] = np.ma.masked_where(mask==0, image-image_het).filled(fill_value=0) / math.sqrt(get_image_num(image, mask))
-  return t_image    
+  return image_het 
   
 def get_image_cleaned(image, alpha, image_dim, alpha_dim=None):
   if alpha_dim:
@@ -62,6 +55,9 @@ def upper_tri(v):
     for i_ in range(i, (v_len-i)*v_len, v_len+1):
       vA[i_, 0] = v[i]
   A = vA.reshape((v_len, v_len))
+  A = np.matrix(A)
+  A = A.getH()
+  A = np.array(A)
   return A
 
 def lower_tri(v):
@@ -184,7 +180,8 @@ class Inpainter():
       v_shape = (v.shape[0], v.shape[1], image_dim)
 
       v_het = get_image_het(v, w_constraint, image_dim)
-      t_v = get_image_t(v, w_constraint, image_dim, v_het)
+      t_v = np.zeros(v_shape)
+      t_v[:,:,...] = np.ma.masked_where(w_constraint==0, v-v_het).filled(fill_value=0) / math.sqrt(get_image_num(v, w_constraint))
       t_v = get_image_cleaned(t_v, alpha_image, image_dim, alpha_dim)
       '''
       9B. Draw Gaussian Sample,
@@ -192,10 +189,10 @@ class Inpainter():
         where
           W = Normalized Gaussian White Noise
       '''
-      W = np.random.normal(0, 1, (image.shape[0], image.shape[1], 1)).astype(np.float32)
+      W = np.random.normal(0, 1, (image.shape[0], image.shape[1])).astype(np.float32)
       F = np.zeros(v_shape)
       for dim in range(image_dim):
-        F[:,:,[dim]] = convolve2d_fft(t_v[:,:,[dim]], W)
+        F[:,:,dim] = convolve2d_fft(t_v[:,:,dim], W)
       F = get_image_cleaned(F, alpha_image, image_dim, alpha_dim)
       '''
       9C. Compute using CGD
@@ -241,16 +238,26 @@ class Inpainter():
 
       gam_cond = []
       for dim in range(image_dim):
-        gam_cond.append(np.zeros((t_v_num, t_v_num, 2)))
-      gam_cond = np.array(gam_cond)
+        gam_cond.append(np.zeros((t_v_num, t_v_num)))
+      gam_cond = np.dstack(tuple(gam_cond))
 
-      gam_cond = []
+      U = []
+      L = []
       for dim in range(image_dim):
         U_curr = upper_tri(v_1[0,:,dim])
         L_curr = lower_tri(v_2[0,:,dim])
-        gam_cond_curr = U_curr + L_curr
-        gam_cond.append(gam_cond_curr)
-      gam_cond = np.dstack(tuple(gam_cond))
+        U.append(U_curr)
+        L.append(L_curr)
+      U = np.dstack(tuple(U))
+      L = np.dstack(tuple(L))
+
+      for elem_1 in range(U.shape[0]):
+        for elem_2 in range(L.shape[0]):
+          for dim in range(image_dim):
+            if (elem_2 > elem_1):
+              gam_cond[elem_1, elem_2, dim] = U[elem_1, elem_2, dim] + L[elem_1, elem_2, dim]
+            else:
+              gam_cond[elem_1, elem_2, dim] = U[elem_1, elem_2, dim]
 
       for dim in range(image_dim):
         gam_cond[:,:,dim] = np.transpose(gam_cond[:,:,dim]) + gam_cond[:,:,dim] - diag(gam_cond[:,:,dim])
@@ -348,19 +355,19 @@ class Inpainter():
       '''
       kriging_comp = []
       for dim in range(image_dim):
-        kriging_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_1_[:,:,[dim]]) + v_het[dim]
+        kriging_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_1_[:,:,[dim]])
         kriging_comp.append(kriging_comp_curr)
       kriging_comp = np.dstack(tuple(kriging_comp))
       
       innov_comp = []
       for dim in range(image_dim):
-        innov_comp_curr = F[:,:,[dim]] - convolve2d_fft(cor_t_v[:,:,[dim]], psi_2_[:,:,[dim]]) + v_het[dim]
+        innov_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_2_[:,:,[dim]])
         innov_comp.append(innov_comp_curr)
       innov_comp = np.dstack(tuple(innov_comp))
       '''
       9F. Fill M with values of v_het + (u - v_het)^* + F - F^*
       '''
-      fill = v_het + kriging_comp + F - innov_comp
+      fill =  kriging_comp +  F - innov_comp + v_het
       result = np.zeros(image.shape)
       for x in range(mcw.shape[0]):
         for y in range(mcw.shape[1]):
