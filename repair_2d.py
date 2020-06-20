@@ -215,7 +215,6 @@ class Inpainter():
       min_c_y = mcw.shape[1]
       max_c_x = 0
       max_c_y = 0
-      z = 0
       for x in range(mcw.shape[0]):
         for y in range(mcw.shape[1]):
           if (mcw[x, y, 1] > threshold):
@@ -223,42 +222,32 @@ class Inpainter():
             min_c_y = min(min_c_y, y)
             max_c_x = max(max_c_x, x)
             max_c_y = max(max_c_y, y)
-            z += 1
 
-      v_1 = []
-      v_2 = []
-      for dim in range(image_dim):
-        v_1.append(np.zeros((1, c_num)))
-        v_2.append(np.zeros((1, c_num)))
-      v_1 = np.dstack(tuple(v_1))
-      v_2 = np.dstack(tuple(v_2))
+      v_1 = np.zeros((c_num, image_dim))
+      v_2 = np.zeros((c_num, image_dim))
       z = 0
       for x in range(min_c_x, max_c_x + 1):
         for y in range(min_c_y, max_c_y + 1):
           if (mcw[x, y, 1] > threshold):
             for dim in range(image_dim):
-              v_1[0, z, dim] = cor_t_v[x - min_c_x, y - min_c_y, dim]
+              v_1[z, dim] = cor_t_v[x - min_c_x, y - min_c_y, dim]
               if (y - max_c_y == 0):
-                v_2[0, z, dim] = cor_t_v[x - min_c_x, 0, dim]
+                v_2[z, dim] = cor_t_v[x - min_c_x, 0, dim]
               else:  
-                v_2[0, z, dim] = cor_t_v[x - min_c_x, y - max_c_y + t_v.shape[1], dim]
+                v_2[z, dim] = cor_t_v[x - min_c_x, y - max_c_y + t_v.shape[1], dim]
             z += 1
 
       U = []
       L = []
       for dim in range(image_dim):
-        U_curr = upper_tri(v_1[0,:,dim])
-        L_curr = lower_tri(v_2[0,:,dim])
+        U_curr = upper_tri(v_1[:,dim])
+        L_curr = lower_tri(v_2[:,dim])
         U.append(U_curr)
         L.append(L_curr)
       U = np.dstack(tuple(U))
       L = np.dstack(tuple(L))
 
-      gam_cond = []
-      for dim in range(image_dim):
-        gam_cond.append(np.zeros((c_num, c_num)))
-      gam_cond = np.dstack(tuple(gam_cond))
-
+      gam_cond = np.zeros((c_num, c_num, image_dim))
       for elem_1 in range(U.shape[0]):
         for elem_2 in range(U.shape[0]):
           for dim in range(image_dim):
@@ -266,58 +255,42 @@ class Inpainter():
               gam_cond[elem_1, elem_2, dim] = U[elem_1, elem_2, dim] + L[elem_1, elem_2, dim]
             else:
               gam_cond[elem_1, elem_2, dim] = U[elem_1, elem_2, dim]
-
       for dim in range(image_dim):
         gam_cond[:,:,dim] = np.transpose(gam_cond[:,:,dim]) + gam_cond[:,:,dim] - diag(gam_cond[:,:,dim])
       
-      u_cond = []
-      F_cond = []
-      for dim in range(image_dim):
-        u_cond.append(np.zeros(c_num))
-        F_cond.append(np.zeros(c_num))
-      u_cond = np.dstack(tuple(u_cond))
-      F_cond = np.dstack(tuple(F_cond))
+      u_cond = np.zeros((c_num, image_dim))
+      F_cond = np.zeros((c_num, image_dim))
       z = 0
-      for x in range(min_c_x, max_c_x):
-        for y in range(min_c_y, max_c_y):
+      for x in range(min_c_x, max_c_x + 1):
+        for y in range(min_c_y, max_c_y + 1):
           if mcw[x, y, 1] > threshold:
             for dim in range(image_dim):
-              u_cond[0, z, dim] = v[x, y, dim]
-              F_cond[0, z, dim] = F[x, y, dim]
+              u_cond[z, dim] = v[x, y, dim]
+              F_cond[z, dim] = F[x, y, dim]
             z += 1
       
-      psi_1 = []
-      psi_2 = []
+      psi_1 = np.zeros((c_num, image_dim))
+      psi_2 = np.zeros((c_num, image_dim))
       for dim in range(image_dim):
-        sol, is_singular = lss(gam_cond[:,:,dim], np.transpose(u_cond[:,:,dim] - v_het[dim]))
+        sol, is_singular = lss(gam_cond[:,:,dim], np.transpose(u_cond[:,dim] - v_het[dim]))
         if is_singular:
-          psi_1_curr = sol
-        sol, is_singular = lss(gam_cond[:,:,dim], np.transpose(F_cond[:,:,dim]))
+          psi_1[:,dim] = sol
+        sol, is_singular = lss(gam_cond[:,:,dim], np.transpose(F_cond[:,dim]))
         if is_singular:
-          psi_2_curr = sol
-        psi_1.append(psi_1_curr)
-        psi_2.append(psi_2_curr)
-      psi_1 = np.dstack(tuple(psi_1))
-      psi_2 = np.dstack(tuple(psi_2))
+          psi_2[:,dim]= sol
       '''
       9D. Extend psi_1 and psi_2 by zero-padding
       '''
-      psi_1_ = []
-      psi_2_ = []
+      psi_1_ = np.zeros((t_v.shape[0], t_v.shape[1], image_dim))
+      psi_2_ = np.zeros((t_v.shape[0], t_v.shape[1], image_dim))
       for dim in range(image_dim):
-        psi_1_curr_ = np.zeros((t_v.shape[0], t_v.shape[1]))
-        psi_2_curr_ = np.zeros((t_v.shape[0], t_v.shape[1]))
         z = 0
         for x in range(mcw.shape[0]):
           for y in range(mcw.shape[1]):
             if mcw[x, y, 1] > threshold:
-              psi_1_curr_[x, y] = psi_1[z,:,dim]
-              psi_2_curr_[x, y] = psi_2[z,:,dim]
+              psi_1_[x, y, dim] = psi_1[z,dim]
+              psi_2_[x, y, dim] = psi_2[z,dim]
               z += 1
-        psi_1_.append(psi_1_curr_)
-        psi_2_.append(psi_2_curr_)
-      psi_1_ = np.dstack(tuple(psi_1_))
-      psi_2_ = np.dstack(tuple(psi_2_))
       psi_1 = psi_1_
       psi_2 = psi_2_
       '''
@@ -329,17 +302,13 @@ class Inpainter():
           where
             convolve(t_v, t_v_tilde^T) = 1/|w| SUMx elem( wINTER(w-h) ) (u(x+h) - v_het)(u(x) - v_het)^T
       '''
-      kriging_comp = []
+      kriging_comp = np.zeros((t_v.shape[0], t_v.shape[1], image_dim))
       for dim in range(image_dim):
-        kriging_comp_curr = convolve2d_fft(cor_t_v[:,:,dim], psi_1_[:,:,dim])
-        kriging_comp.append(kriging_comp_curr)
-      kriging_comp = np.dstack(tuple(kriging_comp))
+        kriging_comp[:,:,dim] = convolve2d_fft(cor_t_v[:,:,dim], psi_1[:,:,dim])
       
-      innov_comp = []
+      innov_comp = np.zeros((t_v.shape[0], t_v.shape[1], image_dim))
       for dim in range(image_dim):
-        innov_comp_curr = convolve2d_fft(cor_t_v[:,:,dim], psi_2_[:,:,dim])
-        innov_comp.append(innov_comp_curr)
-      innov_comp = np.dstack(tuple(innov_comp))
+        innov_comp[:,:,dim] = convolve2d_fft(cor_t_v[:,:,dim], psi_2[:,:,dim])
       '''
       9F. Fill M with values of v_het + (u - v_het)^* + F - F^*
       '''
