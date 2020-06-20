@@ -4,14 +4,14 @@ import numpy as np
 from itertools import combinations
 import os
 from PIL import Image, ImageDraw
-def get_image_num(image, mask):
+def get_image_num(mask):
   return np.sum(mask)
 
 def get_image_het(image, mask, image_dim):
   image_het = np.zeros(image_dim)
   for d in range(image_dim):
     image_het[d] = np.sum(np.ma.masked_where(mask == 0, image[:, :,[d]]).filled(fill_value=0))
-  image_het = image_het / get_image_num(image, mask)
+  image_het = image_het / get_image_num(mask)
   return image_het 
   
 def get_image_cleaned(image, alpha, image_dim, alpha_dim=None):
@@ -55,9 +55,10 @@ def upper_tri(v):
     for i_ in range(i, (v_len-i)*v_len, v_len+1):
       vA[i_, 0] = v[i]
   A = vA.reshape((v_len, v_len))
+  '''
   A = np.matrix(A)
   A = A.getH()
-  A = np.array(A)
+  A = np.array(A)'''
   return A
 
 def lower_tri(v):
@@ -166,22 +167,29 @@ class Inpainter():
       alpha_image = None
       image_dim = int(image.size / (image.shape[0] * image.shape[1]))
       image = image.reshape((image.shape[0], image.shape[1], image_dim))
+
+      threshold = 255 * 0.55
+      m_constraint = np.where(np.logical_and(mcw[:,:,[0]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
+      c_constraint = np.where(np.logical_and(mcw[:,:,[1]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
+      w_constraint = np.where(np.logical_and(mcw[:,:,[2]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
+      m_num = get_image_num(m_constraint)
+      c_num = get_image_num(c_constraint)
+      w_num = get_image_num(w_constraint)
       '''
       9A. Compute
         v_het = 1/|w|*[SUMr_elem(w)(v(r)), SUMg_elem(g)(v(g)), SUMb_elem(b)(v(b))]
               | 1/sqrt(|w|)*(v-v_het)
         t_v = | 0 otherwise
           where
-            v = w restricted to u (w where u is opaque)
+            v = u restricted to w
       '''
-      w_constraint = np.where(mcw[:,:,[2]] == 255, [1]*image_dim, [0]*image_dim)
       v = np.ma.masked_where(w_constraint==0, image).filled(fill_value=0)
       if alpha_dim != None: alpha_image = v[:,:,[alpha_dim]]
       v_shape = (v.shape[0], v.shape[1], image_dim)
 
       v_het = get_image_het(v, w_constraint, image_dim)
       t_v = np.zeros(v_shape)
-      t_v[:,:,...] = np.ma.masked_where(w_constraint==0, v-v_het).filled(fill_value=0) / math.sqrt(get_image_num(v, w_constraint))
+      t_v[:,:,...] = np.ma.masked_where(w_constraint==0, v-v_het).filled(fill_value=0) / math.sqrt(w_num)
       t_v = get_image_cleaned(t_v, alpha_image, image_dim, alpha_dim)
       '''
       9B. Draw Gaussian Sample,
@@ -199,35 +207,35 @@ class Inpainter():
         psi_1 = gamma_t |cxc (u|c - v_het)
         psi_2 = gamma_t |cxc (F|c)
       '''
-      c_constraint = np.where(mcw[:,:,[1]] == 255, [1]*image_dim, [0]*image_dim)
-      t_v_num = get_image_num(t_v, c_constraint)
       cor_t_v = np.zeros(v_shape)
       for dim in range(image_dim):
-        cor_t_v[:,:,[dim]] = np.real(np.fft.ifft2(np.power(np.abs(np.fft.fft2(t_v[:,:,[dim]])),2)))
+        cor_t_v[:,:,dim] = np.real(np.fft.ifft2(np.power(np.abs(np.fft.fft2(t_v[:,:,dim])),2)))
 
       min_c_x = mcw.shape[0]
       min_c_y = mcw.shape[1]
       max_c_x = 0
       max_c_y = 0
+      z = 0
       for x in range(mcw.shape[0]):
         for y in range(mcw.shape[1]):
-          if (mcw[x, y, 1] == 255):
+          if (mcw[x, y, 1] > threshold):
             min_c_x = min(min_c_x, x)
             min_c_y = min(min_c_y, y)
             max_c_x = max(max_c_x, x)
             max_c_y = max(max_c_y, y)
+            z += 1
 
       v_1 = []
       v_2 = []
       for dim in range(image_dim):
-        v_1.append(np.zeros((1, t_v_num)))
-        v_2.append(np.zeros((1, t_v_num)))
+        v_1.append(np.zeros((1, c_num)))
+        v_2.append(np.zeros((1, c_num)))
       v_1 = np.dstack(tuple(v_1))
       v_2 = np.dstack(tuple(v_2))
       z = 0
       for x in range(min_c_x, max_c_x + 1):
         for y in range(min_c_y, max_c_y + 1):
-          if (mcw[x, y, 1] == 255):
+          if (mcw[x, y, 1] > threshold):
             for dim in range(image_dim):
               v_1[0, z, dim] = cor_t_v[x - min_c_x, y - min_c_y, dim]
               if (y - max_c_y == 0):
@@ -235,11 +243,6 @@ class Inpainter():
               else:  
                 v_2[0, z, dim] = cor_t_v[x - min_c_x, y - max_c_y + t_v.shape[1], dim]
             z += 1
-
-      gam_cond = []
-      for dim in range(image_dim):
-        gam_cond.append(np.zeros((t_v_num, t_v_num)))
-      gam_cond = np.dstack(tuple(gam_cond))
 
       U = []
       L = []
@@ -251,8 +254,13 @@ class Inpainter():
       U = np.dstack(tuple(U))
       L = np.dstack(tuple(L))
 
+      gam_cond = []
+      for dim in range(image_dim):
+        gam_cond.append(np.zeros((c_num, c_num)))
+      gam_cond = np.dstack(tuple(gam_cond))
+
       for elem_1 in range(U.shape[0]):
-        for elem_2 in range(L.shape[0]):
+        for elem_2 in range(U.shape[0]):
           for dim in range(image_dim):
             if (elem_2 > elem_1):
               gam_cond[elem_1, elem_2, dim] = U[elem_1, elem_2, dim] + L[elem_1, elem_2, dim]
@@ -262,49 +270,17 @@ class Inpainter():
       for dim in range(image_dim):
         gam_cond[:,:,dim] = np.transpose(gam_cond[:,:,dim]) + gam_cond[:,:,dim] - diag(gam_cond[:,:,dim])
       
-      '''
-      z = 0
-      for x in range(min_c_x, max_c_x):
-        for y in range(min_c_y, max_c_y):
-          if (mcw[x, y, 1] == 255):
-            # valid fixed point
-            z_ = 0
-            for x_ in range(min_c_x, x):
-              for y_ in range(min_c_y, y):
-                if (mcw[x_, y_, 1] == 255):
-                  # valid compared point
-                  for dim in range(image_dim):
-                    gam_cond[z, z_, dim] = [0, 0]
-                  z_ += 1
-            z_ = 0
-            for x_ in range(min_c_x, max_c_x):
-              for y_ in range(min_c_y, max_c_y):
-                if (mcw[x_, y_, 1] == 255):
-                  # valid compared point
-                  z_diff = z_ - z
-                  for dim in range(image_dim):
-                    M_temp1_curr = upper_tri(v_1[_,_,dim])
-                    gam_cond[_,_,dim] = M_temp1_curr
-                    if (x_ > x): # Tentative
-                      M_temp2_curr = lower_tri(v_2[_,_,dim])
-                      gam_cond[_,_,dim] += M_temp2_curr
-                  z_ += 1
-            z += 1
-
-      for dim in range(image_dim):
-        gam_cond[:,:,dim] = np.transpose(gam_cond[:,:,dim]) + gam_cond[:,:,dim] - diag(gam_cond[:,:,dim])'''
-      
       u_cond = []
       F_cond = []
       for dim in range(image_dim):
-        u_cond.append(np.zeros(t_v_num))
-        F_cond.append(np.zeros(t_v_num))
+        u_cond.append(np.zeros(c_num))
+        F_cond.append(np.zeros(c_num))
       u_cond = np.dstack(tuple(u_cond))
       F_cond = np.dstack(tuple(F_cond))
       z = 0
       for x in range(min_c_x, max_c_x):
         for y in range(min_c_y, max_c_y):
-          if mcw[x, y, 1] == 255:
+          if mcw[x, y, 1] > threshold:
             for dim in range(image_dim):
               u_cond[0, z, dim] = v[x, y, dim]
               F_cond[0, z, dim] = F[x, y, dim]
@@ -334,7 +310,7 @@ class Inpainter():
         z = 0
         for x in range(mcw.shape[0]):
           for y in range(mcw.shape[1]):
-            if mcw[x, y, 1] == 255:
+            if mcw[x, y, 1] > threshold:
               psi_1_curr_[x, y] = psi_1[z,:,dim]
               psi_2_curr_[x, y] = psi_2[z,:,dim]
               z += 1
@@ -355,13 +331,13 @@ class Inpainter():
       '''
       kriging_comp = []
       for dim in range(image_dim):
-        kriging_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_1_[:,:,[dim]])
+        kriging_comp_curr = convolve2d_fft(cor_t_v[:,:,dim], psi_1_[:,:,dim])
         kriging_comp.append(kriging_comp_curr)
       kriging_comp = np.dstack(tuple(kriging_comp))
       
       innov_comp = []
       for dim in range(image_dim):
-        innov_comp_curr = convolve2d_fft(cor_t_v[:,:,[dim]], psi_2_[:,:,[dim]])
+        innov_comp_curr = convolve2d_fft(cor_t_v[:,:,dim], psi_2_[:,:,dim])
         innov_comp.append(innov_comp_curr)
       innov_comp = np.dstack(tuple(innov_comp))
       '''
@@ -371,7 +347,7 @@ class Inpainter():
       result = np.zeros(image.shape)
       for x in range(mcw.shape[0]):
         for y in range(mcw.shape[1]):
-          if (mcw[x, y, 0]) == 255:
+          if (mcw[x, y, 0]) > threshold:
             result[x, y] = fill[x, y]
           else:
             result[x, y] = image[x, y]
