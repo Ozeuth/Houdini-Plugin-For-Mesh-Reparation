@@ -4,6 +4,7 @@ import numpy as np
 from itertools import combinations
 import os
 from PIL import Image, ImageDraw
+
 def get_image_num(mask):
   return np.sum(mask)
 
@@ -25,20 +26,6 @@ def convolve2d_fft(A, B):
   tfB = np.fft.fft2(B)
   tfC = np.multiply(tfA, tfB)
   return np.real(np.fft.ifft2(tfC))
-
-def CGD(phi, A, k_max=1000, epsilon=0.01):
-  k, psi  = 0, 0
-  r = np.matmul(np.transpose(A), phi) - np.matmul(np.transpose(A), A) * psi
-  d = r
-  r_curr = np.linalg.norm(r, 2)
-  while (r_curr > epsilon and k <= k_max):
-    alpha = math.pow(r_curr, 2) / np.matmul(np.transpose(d), np.matmul(np.transpose(A), np.matmul(A, d)))
-    psi = psi + np.matmul(alpha , d)
-    r = r - np.matmul(alpha, np.matmul(np.transpose(A), np.matmul(A, d)))
-    d = r + (math.pow(np.linalg.norm(r, 2), 2) / math.pow(r_curr, 2)) * d
-    k += 1
-    r_curr = np.linalg.norm(r, 2)
-  return psi
 
 def diag(A):
   diagonal = np.zeros(A.shape)
@@ -92,12 +79,22 @@ class Inpainter():
     self.image_paths = glob.glob(path_name + "/*" + image_match + ".png")
     self.mcw_paths = glob.glob(path_name + "/*" + mcw_match + ".png")
 
-  def debug(self, image_name, image_dim, v=None, t_v=None, F=None, cor_t_v=None, c=None, A=None, psi_1=None, psi_2=None, kriging_comp=None, innov_comp=None, result=None):
-    #self.debug(image_name, image_dim, v, t_v, F, cor_t_v, c, A, phi_1, phi_2, psi_1, psi_2, kriging_comp, innov_comp, result)
+
+  def inpaint_image(self, image, fill, mcw):
+    result = np.zeros(image.shape)
+    for x in range(mcw.shape[0]):
+      for y in range(mcw.shape[1]):
+        if (mcw[x, y, 0] > 255/2):
+          result[x, y] = fill[x, y]
+        else:
+          result[x, y] = image[x, y]
+    return result
+
+  def debug(self, image_name, image_dim, v=None, F=None, F_result=None, cor_t_v=None, c=None, A=None, psi_1=None, psi_2=None, kriging_comp=None, innov_comp=None, full_result=None):
     if image_dim == 1:
       if v is not None: v = v.reshape((v.shape[0], v.shape[1]))
-      if t_v is not None: t_v = t_v.reshape((t_v.shape[0], t_v.shape[1]))
       if F is not None: F = F.reshape((F.shape[0], F.shape[1]))
+      if F_result is not None: F_result = F_result.reshape((F_result.shape[0], F_result.shape[1]))
       if cor_t_v is not None: cor_t_v = cor_t_v.reshape((cor_t_v.shape[0], cor_t_v.shape[1]))
       if c is not None: c = c.reshape((c.shape[0], c.shape[1]))
       if A is not None: A = A.reshape((A.shape[0], A.shape[1]))
@@ -105,18 +102,18 @@ class Inpainter():
       if psi_2 is not None: psi_2 = psi_2.reshape((psi_2.shape[0], psi_2.shape[1]))
       if kriging_comp is not None: kriging_comp = kriging_comp.reshape((kriging_comp.shape[0], kriging_comp.shape[1]))
       if innov_comp is not None: innov_comp = innov_comp.reshape((innov_comp.shape[0], innov_comp.shape[1]))
-      if result is not None: result = result.reshape((result.shape[0], result.shape[1]))
+      if full_result is not None: full_result = full_result.reshape((full_result.shape[0], full_result.shape[1]))
     if v is not None:
       im = Image.fromarray(np.uint8(v))
       im.save(self.path_name + "/" + str(image_name) + " v.png")
       im.close()
-    if t_v is not None:
-      im = Image.fromarray(np.uint8(t_v))
-      im.save(self.path_name + "/" + str(image_name) + " t_v.png")
-      im.close()
     if F is not None:
       im = Image.fromarray(np.uint8(F))
       im.save(self.path_name + "/" + str(image_name) + " F.png")
+      im.close()
+    if F_result is not None:
+      im = Image.fromarray(np.uint8(F_result))
+      im.save(self.path_name + "/" + str(image_name) + " F final.png")
       im.close()
     if cor_t_v is not None:    
       im = Image.fromarray(np.uint8(cor_t_v))
@@ -146,8 +143,8 @@ class Inpainter():
       im = Image.fromarray(np.uint8(innov_comp))
       im.save(self.path_name + "/" + str(image_name) + " innov.png")
       im.close()
-    if result is not None:
-      im = Image.fromarray(np.uint8(result))
+    if full_result is not None:
+      im = Image.fromarray(np.uint8(full_result))
       im.save(self.path_name + "/" + str(image_name) + " final.png")
       im.close()
 
@@ -158,7 +155,7 @@ class Inpainter():
       inpainting using Gaussian conditional simulation, relying on a Kriging framework
     '''
     for (image_path, mcw_path) in list(zip(self.image_paths, self.mcw_paths)):
-      v = t_v = cor_t_v = c = A = psi_1 = psi_2 = kriging_comp = innov_comp = result = alpha_dim = None
+      v = F = F_result = cor_t_v = c = A = psi_1 = psi_2 = kriging_comp = innov_comp = full_result = alpha_dim = None
       image = Image.open(image_path).convert('L')
       image_name = os.path.splitext(os.path.basename(image_path))[0]
       image = np.array(image)
@@ -202,6 +199,7 @@ class Inpainter():
       for dim in range(image_dim):
         F[:,:,dim] = convolve2d_fft(t_v[:,:,dim], W)
       F = get_image_cleaned(F, alpha_image, image_dim, alpha_dim)
+      F_result = self.inpaint_image(image, F + v_het, mcw)
       '''
       9C. Compute using CGD
         psi_1 = gamma_t |cxc (u|c - v_het)
@@ -237,6 +235,62 @@ class Inpainter():
                 v_2[z, dim] = cor_t_v[x - min_c_x, y - max_c_y + t_v.shape[1], dim]
             z += 1
 
+      u_cond = np.zeros((c_num, image_dim))
+      F_cond = np.zeros((c_num, image_dim))
+
+      cor_t_v_cond = np.zeros((c_num, image_dim))
+      t_v_cond = np.zeros((c_num, image_dim))
+      z = 0
+      for x in range(min_c_x, max_c_x + 1):
+        for y in range(min_c_y, max_c_y + 1):
+          if mcw[x, y, 1] > threshold:
+            for dim in range(image_dim):
+              u_cond[z, dim] = v[x, y, dim]
+              F_cond[z, dim] = F[x, y, dim]
+
+              cor_t_v_cond[z, dim] = cor_t_v[x, y, dim]
+              t_v_cond[z, dim] = t_v[x, y, dim]
+            z += 1
+      '''
+      gam_cond = np.zeros((c_num, c_num, image_dim))
+      z_prior = 0
+      for x in range(min_c_x, max_c_x + 1):
+        z_curr = z_prior
+        for y in range(min_c_y, max_c_y + 1):
+          if (mcw[x, y, 1] > threshold):
+            z_curr += 1
+
+        z_prior_ = z_curr
+        for x_ in range(min_c_x, max_c_x + 1):
+          z_curr_ = z_prior_
+          for y_ in range(min_c_y, max_c_y + 1):
+            if (mcw[x_, y_, 1] > threshold):
+              z_curr_ += 1
+            
+          z_ij_ = z_prior_ - z_prior
+          z_ij = z_curr_ - z_curr
+          #print(str(z_ij_) + " " + str(z_ij) + " " + str(z_prior_) + " " + str(z_prior) + " " + str(z_curr_) + " " + str(z_curr)) 
+          for dim in range(image_dim):
+            bin_1_curr = c_cond[z_prior:z_curr]
+            bin_2_curr = c_cond[z_prior_:z_curr_]
+            print(bin_1_curr)
+            print(bin_2_curr)
+            print(bin_1_curr.shape)
+            print(bin_2_curr.shape)
+            M_temp_1_curr= upper_tri(v_1[z_ij_: z_ij + 1,dim])
+            print("M1")
+            print(M_temp_1_curr)
+            print(M_temp_1_curr.shape)
+            print(gam_cond[z_prior:z_curr, z_prior_:z_curr_, dim].shape)
+            gam_cond[z_prior:z_curr, z_prior_:z_curr_, dim] += M_temp_1_curr
+            if z_curr_ > z_curr:
+              M_temp_2_curr = lower_tri(v_2[z_ij_: z_ij + 1,dim])
+              print("M2")
+              print(M_temp_2_curr)
+              gam_cond[z_prior:z_curr, z_prior_:z_curr_, dim] += M_temp_2_curr
+          z_prior_ = z_curr_
+        z_prior = z_curr'''
+
       U = []
       L = []
       for dim in range(image_dim):
@@ -257,17 +311,6 @@ class Inpainter():
               gam_cond[elem_1, elem_2, dim] = U[elem_1, elem_2, dim]
       for dim in range(image_dim):
         gam_cond[:,:,dim] = np.transpose(gam_cond[:,:,dim]) + gam_cond[:,:,dim] - diag(gam_cond[:,:,dim])
-      
-      u_cond = np.zeros((c_num, image_dim))
-      F_cond = np.zeros((c_num, image_dim))
-      z = 0
-      for x in range(min_c_x, max_c_x + 1):
-        for y in range(min_c_y, max_c_y + 1):
-          if mcw[x, y, 1] > threshold:
-            for dim in range(image_dim):
-              u_cond[z, dim] = v[x, y, dim]
-              F_cond[z, dim] = F[x, y, dim]
-            z += 1
       
       psi_1 = np.zeros((c_num, image_dim))
       psi_2 = np.zeros((c_num, image_dim))
@@ -313,14 +356,8 @@ class Inpainter():
       9F. Fill M with values of v_het + (u - v_het)^* + F - F^*
       '''
       fill =  kriging_comp +  F - innov_comp + v_het
-      result = np.zeros(image.shape)
-      for x in range(mcw.shape[0]):
-        for y in range(mcw.shape[1]):
-          if (mcw[x, y, 0]) > threshold:
-            result[x, y] = fill[x, y]
-          else:
-            result[x, y] = image[x, y]
-      self.debug(image_name, image_dim, v, t_v, F, cor_t_v, c, A, psi_1, psi_2, kriging_comp, innov_comp, result)
+      full_result = self.inpaint_image(image, fill, mcw)
+      self.debug(image_name, image_dim, v, F, F_result, cor_t_v, c, A, psi_1, psi_2, kriging_comp, innov_comp, full_result)
 
 if __name__ == "__main__":
   inpainter = Inpainter("C:\\Users\\Ozeuth\\Python-Houdini-Mesh-Repair\\demo_inpaint")
