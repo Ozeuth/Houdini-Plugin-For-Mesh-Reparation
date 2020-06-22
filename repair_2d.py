@@ -1,9 +1,18 @@
+import argparse
 import glob
 import math
 import numpy as np
-from itertools import combinations
 import os
+import sys
+from itertools import combinations
 from PIL import Image, ImageDraw
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--image_path", type=str, default=os.path.dirname(os.path.abspath(__file__)) + "\\demo_inpaint")
+parser.add_argument("--opening_suffix", type=str, default="opening")
+parser.add_argument("--mask_suffix", type=str, default="mcw")
+parser.add_argument("--alpha_dim", type=int, default=None)
 
 def get_image_num(mask, image_dim):
   return int(np.sum(mask)/image_dim)
@@ -45,12 +54,10 @@ def lss(A, b):
     return (sols, False)
 
 class Inpainter():
-  def __init__(self, path_name, image_match="opening", mcw_match="mcw", alpha_dim=None):
-    self.path_name = path_name
-    self.alpha_dim = alpha_dim
-    self.image_paths = glob.glob(path_name + "/*" + image_match + ".png")
-    self.mcw_paths = glob.glob(path_name + "/*" + mcw_match + ".png")
-
+  def __init__(self, self_dict):
+    for arg in self_dict: setattr(self, arg, self_dict[arg])
+    self.image_paths = glob.glob(self.image_path + "/*" + self.opening_suffix + ".png")
+    self.mcw_paths = glob.glob(self.image_path + "/*" + self.mask_suffix + ".png")
 
   def inpaint_image(self, image, fill, mcw):
     result = np.zeros(image.shape)
@@ -73,31 +80,31 @@ class Inpainter():
       if full_result is not None: full_result = full_result.reshape((full_result.shape[0], full_result.shape[1]))
     if v is not None:
       im = Image.fromarray(np.uint8(v))
-      im.save(self.path_name + "/" + str(image_name) + " v.png")
+      im.save(self.image_path + "/" + str(image_name) + " v.png")
       im.close()
     if F is not None:
       im = Image.fromarray(np.uint8(F))
-      im.save(self.path_name + "/" + str(image_name) + " F.png")
+      im.save(self.image_path + "/" + str(image_name) + " F.png")
       im.close()
     if F_result is not None:
       im = Image.fromarray(np.uint8(F_result))
-      im.save(self.path_name + "/" + str(image_name) + " F final.png")
+      im.save(self.image_path + "/" + str(image_name) + " F final.png")
       im.close()
     if cor_t_v is not None:    
       im = Image.fromarray(np.uint8(cor_t_v))
-      im.save(self.path_name + "/" + str(image_name) + " cor_t_v.png")
+      im.save(self.image_path + "/" + str(image_name) + " cor_t_v.png")
       im.close()
     if kriging_comp is not None:
       im = Image.fromarray(np.uint8(kriging_comp))
-      im.save(self.path_name + "/" + str(image_name) + " kriging.png")
+      im.save(self.image_path + "/" + str(image_name) + " kriging.png")
       im.close()
     if innov_comp is not None:
       im = Image.fromarray(np.uint8(innov_comp))
-      im.save(self.path_name + "/" + str(image_name) + " innov.png")
+      im.save(self.image_path + "/" + str(image_name) + " innov.png")
       im.close()
     if full_result is not None:
       im = Image.fromarray(np.uint8(full_result))
-      im.save(self.path_name + "/" + str(image_name) + " final.png")
+      im.save(self.image_path + "/" + str(image_name) + " final.png")
       im.close()
 
   def inpaint(self):
@@ -230,5 +237,7 @@ class Inpainter():
       print("Finished inpainting of: " + str(image_name))
 
 if __name__ == "__main__":
-  inpainter = Inpainter("C:\\Users\\Ozeuth\\Python-Houdini-Mesh-Repair\\demo_inpaint")
+  # Run as is or start with optional arguments
+  args = parser.parse_args()
+  inpainter = Inpainter(vars(args))
   inpainter.inpaint()
