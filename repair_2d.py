@@ -209,108 +209,27 @@ class Inpainter():
       for dim in range(image_dim):
         cor_t_v[:,:,dim] = np.real(np.fft.ifft2(np.power(np.abs(np.fft.fft2(t_v[:,:,dim])),2)))
 
-      min_c_x = mcw.shape[0]
-      min_c_y = mcw.shape[1]
-      max_c_x = 0
-      max_c_y = 0
-      for x in range(mcw.shape[0]):
-        for y in range(mcw.shape[1]):
-          if (mcw[x, y, 1] > threshold):
-            min_c_x = min(min_c_x, x)
-            min_c_y = min(min_c_y, y)
-            max_c_x = max(max_c_x, x)
-            max_c_y = max(max_c_y, y)
-
-      v_1 = np.zeros((c_num, image_dim))
-      v_2 = np.zeros((c_num, image_dim))
-      z = 0
-      for x in range(min_c_x, max_c_x + 1):
-        for y in range(min_c_y, max_c_y + 1):
-          if (mcw[x, y, 1] > threshold):
-            for dim in range(image_dim):
-              v_1[z, dim] = cor_t_v[x - min_c_x, y - min_c_y, dim]
-              if (y - max_c_y == 0):
-                v_2[z, dim] = cor_t_v[x - min_c_x, 0, dim]
-              else:  
-                v_2[z, dim] = cor_t_v[x - min_c_x, y - max_c_y + t_v.shape[1], dim]
-            z += 1
-
       u_cond = np.zeros((c_num, image_dim))
       F_cond = np.zeros((c_num, image_dim))
-
       cor_t_v_cond = np.zeros((c_num, image_dim))
-      t_v_cond = np.zeros((c_num, image_dim))
+      mapping = np.zeros((c_num, 2, image_dim))
       z = 0
-      for x in range(min_c_x, max_c_x + 1):
-        for y in range(min_c_y, max_c_y + 1):
+      for x in range(mcw.shape[0]):
+        for y in range(mcw.shape[1]):
           if mcw[x, y, 1] > threshold:
             for dim in range(image_dim):
               u_cond[z, dim] = v[x, y, dim]
               F_cond[z, dim] = F[x, y, dim]
-
               cor_t_v_cond[z, dim] = cor_t_v[x, y, dim]
-              t_v_cond[z, dim] = t_v[x, y, dim]
+              mapping[z, :, dim] = [x, y]
             z += 1
-      '''
-      gam_cond = np.zeros((c_num, c_num, image_dim))
-      z_prior = 0
-      for x in range(min_c_x, max_c_x + 1):
-        z_curr = z_prior
-        for y in range(min_c_y, max_c_y + 1):
-          if (mcw[x, y, 1] > threshold):
-            z_curr += 1
-
-        z_prior_ = z_curr
-        for x_ in range(min_c_x, max_c_x + 1):
-          z_curr_ = z_prior_
-          for y_ in range(min_c_y, max_c_y + 1):
-            if (mcw[x_, y_, 1] > threshold):
-              z_curr_ += 1
-            
-          z_ij_ = z_prior_ - z_prior
-          z_ij = z_curr_ - z_curr
-          #print(str(z_ij_) + " " + str(z_ij) + " " + str(z_prior_) + " " + str(z_prior) + " " + str(z_curr_) + " " + str(z_curr)) 
-          for dim in range(image_dim):
-            bin_1_curr = c_cond[z_prior:z_curr]
-            bin_2_curr = c_cond[z_prior_:z_curr_]
-            print(bin_1_curr)
-            print(bin_2_curr)
-            print(bin_1_curr.shape)
-            print(bin_2_curr.shape)
-            M_temp_1_curr= upper_tri(v_1[z_ij_: z_ij + 1,dim])
-            print("M1")
-            print(M_temp_1_curr)
-            print(M_temp_1_curr.shape)
-            print(gam_cond[z_prior:z_curr, z_prior_:z_curr_, dim].shape)
-            gam_cond[z_prior:z_curr, z_prior_:z_curr_, dim] += M_temp_1_curr
-            if z_curr_ > z_curr:
-              M_temp_2_curr = lower_tri(v_2[z_ij_: z_ij + 1,dim])
-              print("M2")
-              print(M_temp_2_curr)
-              gam_cond[z_prior:z_curr, z_prior_:z_curr_, dim] += M_temp_2_curr
-          z_prior_ = z_curr_
-        z_prior = z_curr'''
-
-      U = []
-      L = []
-      for dim in range(image_dim):
-        U_curr = upper_tri(v_1[:,dim])
-        L_curr = lower_tri(v_2[:,dim])
-        U.append(U_curr)
-        L.append(L_curr)
-      U = np.dstack(tuple(U))
-      L = np.dstack(tuple(L))
 
       gam_cond = np.zeros((c_num, c_num, image_dim))
-      for elem_1 in range(U.shape[0]):
-        for elem_2 in range(U.shape[0]):
-          for dim in range(image_dim):
-            if (elem_2 > elem_1):
-              gam_cond[elem_1, elem_2, dim] = U[elem_1, elem_2, dim] + L[elem_1, elem_2, dim]
-            else:
-              gam_cond[elem_1, elem_2, dim] = U[elem_1, elem_2, dim]
-      for dim in range(image_dim):
-        gam_cond[:,:,dim] = np.transpose(gam_cond[:,:,dim]) + gam_cond[:,:,dim] - diag(gam_cond[:,:,dim])
+      for elem_1 in range(c_num):
+        for elem_2 in range(c_num):
+          if (elem_2 - elem_1 >= 0):
+            position = mapping[elem_2, :, dim] - mapping[elem_1, :, dim]
+            gam_cond[elem_1, elem_2] = cor_t_v[int(position[0]), int(position[1]), dim]
       
       psi_1 = np.zeros((c_num, image_dim))
       psi_2 = np.zeros((c_num, image_dim))
