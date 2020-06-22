@@ -5,14 +5,14 @@ from itertools import combinations
 import os
 from PIL import Image, ImageDraw
 
-def get_image_num(mask):
-  return np.sum(mask)
+def get_image_num(mask, image_dim):
+  return int(np.sum(mask)/image_dim)
 
 def get_image_het(image, mask, image_dim):
   image_het = np.zeros(image_dim)
   for d in range(image_dim):
     image_het[d] = np.sum(np.ma.masked_where(mask[:, :, d] == 0, image[:, :, d]).filled(fill_value=0))
-  image_het = image_het / get_image_num(mask)
+  image_het = image_het / get_image_num(mask, image_dim)
   return image_het 
   
 def get_image_cleaned(image, alpha, image_dim, alpha_dim=None):
@@ -30,18 +30,18 @@ def convolve2d_fft(A, B):
 def lss(A, b):
   num_vars = A.shape[1]
   rank = np.linalg.matrix_rank(A)
-  if rank == num_vars:              
-    sol = np.linalg.lstsq(A, b)[0] # not under-determined
+  if rank == num_vars:     
+    sol = np.linalg.lstsq(A, b, rcond=None)[0]
     return (sol, True)
   else:
     sols = []
-    for nz in combinations(range(num_vars), rank):# the variables not set to zero
-      try: 
+    for nz in combinations(range(num_vars), rank):
+      try:
         sol = np.zeros((num_vars, 1))
         sol[nz, :] = np.asarray(np.linalg.solve(A[:, nz], b))
         sols.append(sol)
       except np.linalg.LinAlgError:
-        pass # picked bad variables, can't solve
+        pass
     return (sols, False)
 
 class Inpainter():
@@ -62,16 +62,12 @@ class Inpainter():
           result[x, y] = image[x, y]
     return result
 
-  def debug(self, image_name, image_dim, v=None, F=None, F_result=None, cor_t_v=None, c=None, A=None, psi_1=None, psi_2=None, kriging_comp=None, innov_comp=None, full_result=None):
+  def debug(self, image_name, image_dim, v=None, F=None, F_result=None, cor_t_v=None, kriging_comp=None, innov_comp=None, full_result=None):
     if image_dim == 1:
       if v is not None: v = v.reshape((v.shape[0], v.shape[1]))
       if F is not None: F = F.reshape((F.shape[0], F.shape[1]))
       if F_result is not None: F_result = F_result.reshape((F_result.shape[0], F_result.shape[1]))
       if cor_t_v is not None: cor_t_v = cor_t_v.reshape((cor_t_v.shape[0], cor_t_v.shape[1]))
-      if c is not None: c = c.reshape((c.shape[0], c.shape[1]))
-      if A is not None: A = A.reshape((A.shape[0], A.shape[1]))
-      if psi_1 is not None: psi_1 = psi_1.reshape((psi_1.shape[0], psi_1.shape[1]))
-      if psi_2 is not None: psi_2 = psi_2.reshape((psi_2.shape[0], psi_2.shape[1]))
       if kriging_comp is not None: kriging_comp = kriging_comp.reshape((kriging_comp.shape[0], kriging_comp.shape[1]))
       if innov_comp is not None: innov_comp = innov_comp.reshape((innov_comp.shape[0], innov_comp.shape[1]))
       if full_result is not None: full_result = full_result.reshape((full_result.shape[0], full_result.shape[1]))
@@ -90,22 +86,6 @@ class Inpainter():
     if cor_t_v is not None:    
       im = Image.fromarray(np.uint8(cor_t_v))
       im.save(self.path_name + "/" + str(image_name) + " cor_t_v.png")
-      im.close()
-    if c is not None:
-      im = Image.fromarray(np.uint8(c))
-      im.save(self.path_name + "/" + str(image_name) + " c.png")
-      im.close()
-    if A is not None:
-      im = Image.fromarray(np.uint8(A))
-      im.save(self.path_name + "/" + str(image_name) + " A.png")
-      im.close()
-    if psi_1 is not None:
-      im = Image.fromarray(np.uint8(psi_1))
-      im.save(self.path_name + "/" + str(image_name) +  " psi_1.png")
-      im.close()
-    if psi_2 is not None:
-      im = Image.fromarray(np.uint8(psi_2))
-      im.save(self.path_name + "/" + str(image_name) + " psi_2.png")
       im.close()
     if kriging_comp is not None:
       im = Image.fromarray(np.uint8(kriging_comp))
@@ -130,9 +110,10 @@ class Inpainter():
         Au Khai Xiang for providing mathematical perspective and insight
     '''
     for (image_path, mcw_path) in list(zip(self.image_paths, self.mcw_paths)):
-      v = F = F_result = cor_t_v = c = A = psi_1 = psi_2 = kriging_comp = innov_comp = full_result = alpha_dim = None
-      image = Image.open(image_path).convert('L')
+      v = F = F_result = cor_t_v = kriging_comp = innov_comp = full_result = alpha_dim = None
+      image = Image.open(image_path).convert('RGB')
       image_name = os.path.splitext(os.path.basename(image_path))[0]
+      print("Starting inpainting of: " + str(image_name))
       image = np.array(image)
       mcw = np.array(Image.open(mcw_path))
       alpha_dim = self.alpha_dim
@@ -143,8 +124,8 @@ class Inpainter():
       threshold = 255 * 0.55
       c_constraint = np.where(np.logical_and(mcw[:,:,[1]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
       w_constraint = np.where(np.logical_and(mcw[:,:,[2]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
-      c_num = get_image_num(c_constraint)
-      w_num = get_image_num(w_constraint)
+      c_num = get_image_num(c_constraint, image_dim)
+      w_num = get_image_num(w_constraint, image_dim)
       '''
       9A. Compute
         v_het = 1/|w|*[SUMr_elem(w)(v(r)), SUMg_elem(g)(v(g)), SUMb_elem(b)(v(b))]
@@ -196,8 +177,7 @@ class Inpainter():
 
       gam_cond = np.zeros((c_num, c_num, image_dim))
       for elem_1 in range(c_num):
-        for elem_2 in range(c_num):
-          if (elem_2 - elem_1 >= 0):
+        for elem_2 in range(elem_1, c_num):
             position = mapping[elem_2] - mapping[elem_1]
             gam_cond[elem_1, elem_2] = cor_t_v[int(position[0]), int(position[1])]
       
@@ -246,7 +226,8 @@ class Inpainter():
       '''
       fill =  kriging_comp +  F - innov_comp + v_het
       full_result = self.inpaint_image(image, fill, mcw)
-      self.debug(image_name, image_dim, v, F, F_result, cor_t_v, c, A, psi_1, psi_2, kriging_comp, innov_comp, full_result)
+      self.debug(image_name, image_dim, v, F, F_result, cor_t_v, kriging_comp, innov_comp, full_result)
+      print("Finished inpainting of: " + str(image_name))
 
 if __name__ == "__main__":
   inpainter = Inpainter("C:\\Users\\Ozeuth\\Python-Houdini-Mesh-Repair\\demo_inpaint")
