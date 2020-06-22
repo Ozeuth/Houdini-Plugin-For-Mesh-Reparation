@@ -11,7 +11,7 @@ def get_image_num(mask):
 def get_image_het(image, mask, image_dim):
   image_het = np.zeros(image_dim)
   for d in range(image_dim):
-    image_het[d] = np.sum(np.ma.masked_where(mask == 0, image[:, :,[d]]).filled(fill_value=0))
+    image_het[d] = np.sum(np.ma.masked_where(mask[:, :, d] == 0, image[:, :, d]).filled(fill_value=0))
   image_het = image_het / get_image_num(mask)
   return image_het 
   
@@ -26,34 +26,6 @@ def convolve2d_fft(A, B):
   tfB = np.fft.fft2(B)
   tfC = np.multiply(tfA, tfB)
   return np.real(np.fft.ifft2(tfC))
-
-def diag(A):
-  diagonal = np.zeros(A.shape)
-  for x in range(A.shape[0]):
-    for y in range(A.shape[1]):
-      if x == y:
-        diagonal[x, y] = A[x, y]
-  return diagonal
-
-def upper_tri(v):
-  v_len = v.shape[0]
-  vA = np.zeros((v_len * v_len, 1))
-  for i in range(v_len):
-    for i_ in range(i, (v_len-i)*v_len, v_len+1):
-      vA[i_, 0] = v[i]
-  A = vA.reshape((v_len, v_len))
-  '''
-  A = np.matrix(A)
-  A = A.getH()
-  A = np.array(A)'''
-  return A
-
-def lower_tri(v):
-  A = np.matrix(upper_tri(np.flip(v)))
-  A = A.getH()
-  A = np.array(A)
-  B = A - diag(A)
-  return B
 
 def lss(A, b):
   num_vars = A.shape[1]
@@ -153,6 +125,9 @@ class Inpainter():
     9. 2D inpainting
     We follow B Galerne, A Leclaire[2017],
       inpainting using Gaussian conditional simulation, relying on a Kriging framework
+      Special Thanks to:
+        Gautier LOVEIKO for discussing his implementation
+        Au Khai Xiang for providing mathematical perspective and insight
     '''
     for (image_path, mcw_path) in list(zip(self.image_paths, self.mcw_paths)):
       v = F = F_result = cor_t_v = c = A = psi_1 = psi_2 = kriging_comp = innov_comp = full_result = alpha_dim = None
@@ -166,10 +141,8 @@ class Inpainter():
       image = image.reshape((image.shape[0], image.shape[1], image_dim))
 
       threshold = 255 * 0.55
-      m_constraint = np.where(np.logical_and(mcw[:,:,[0]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
       c_constraint = np.where(np.logical_and(mcw[:,:,[1]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
       w_constraint = np.where(np.logical_and(mcw[:,:,[2]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
-      m_num = get_image_num(m_constraint)
       c_num = get_image_num(c_constraint)
       w_num = get_image_num(w_constraint)
       '''
@@ -201,7 +174,7 @@ class Inpainter():
       F = get_image_cleaned(F, alpha_image, image_dim, alpha_dim)
       F_result = self.inpaint_image(image, F + v_het, mcw)
       '''
-      9C. Compute using CGD
+      9C. Compute using LSS
         psi_1 = gamma_t |cxc (u|c - v_het)
         psi_2 = gamma_t |cxc (F|c)
       '''
@@ -211,25 +184,22 @@ class Inpainter():
 
       u_cond = np.zeros((c_num, image_dim))
       F_cond = np.zeros((c_num, image_dim))
-      cor_t_v_cond = np.zeros((c_num, image_dim))
-      mapping = np.zeros((c_num, 2, image_dim))
+      mapping = np.zeros((c_num, 2))
       z = 0
       for x in range(mcw.shape[0]):
         for y in range(mcw.shape[1]):
           if mcw[x, y, 1] > threshold:
-            for dim in range(image_dim):
-              u_cond[z, dim] = v[x, y, dim]
-              F_cond[z, dim] = F[x, y, dim]
-              cor_t_v_cond[z, dim] = cor_t_v[x, y, dim]
-              mapping[z, :, dim] = [x, y]
+            u_cond[z] = v[x, y]
+            F_cond[z] = F[x, y]
+            mapping[z] = [x, y]
             z += 1
 
       gam_cond = np.zeros((c_num, c_num, image_dim))
       for elem_1 in range(c_num):
         for elem_2 in range(c_num):
           if (elem_2 - elem_1 >= 0):
-            position = mapping[elem_2, :, dim] - mapping[elem_1, :, dim]
-            gam_cond[elem_1, elem_2] = cor_t_v[int(position[0]), int(position[1]), dim]
+            position = mapping[elem_2] - mapping[elem_1]
+            gam_cond[elem_1, elem_2] = cor_t_v[int(position[0]), int(position[1])]
       
       psi_1 = np.zeros((c_num, image_dim))
       psi_2 = np.zeros((c_num, image_dim))
