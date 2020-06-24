@@ -12,23 +12,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--image_path", type=str, default=os.path.dirname(os.path.abspath(__file__)) + "\\demo_inpaint")
 parser.add_argument("--opening_suffix", type=str, default="opening")
 parser.add_argument("--mask_suffix", type=str, default="mcw")
-parser.add_argument("--alpha_dim", type=int, default=None)
-
-def get_image_num(mask, image_dim):
-  return int(np.sum(mask)/image_dim)
-
-def get_image_het(image, mask, image_dim):
-  image_het = np.zeros(image_dim)
-  for d in range(image_dim):
-    image_het[d] = np.sum(np.ma.masked_where(mask[:, :, d] == 0, image[:, :, d]).filled(fill_value=0))
-  image_het = image_het / get_image_num(mask, image_dim)
-  return image_het 
-  
-def get_image_cleaned(image, alpha, image_dim, alpha_dim=None):
-  if alpha_dim:
-    image[:,:,[alpha_dim]] = alpha[:,:,[alpha_dim]]
-    image = np.where(image[:,:,[alpha_dim]] == 0, [0]*image_dim, image)
-  return image
 
 def convolve2d_fft(A, B):
   tfA = np.fft.fft2(A)
@@ -58,13 +41,25 @@ class Inpainter():
     for arg in self_dict: setattr(self, arg, self_dict[arg])
     self.image_paths = glob.glob(self.image_path + "/*" + self.opening_suffix + ".png")
     self.mcw_paths = glob.glob(self.image_path + "/*" + self.mask_suffix + ".png")
+    self.threshold = 255 * 0.55
 
-  def inpaint_image(self, image, fill, mcw):
+  def get_image_num(self, mask, image_dim):
+    return int(np.sum(mask)/image_dim)
+
+  def get_image_het(self, image, mask, image_dim):
+    image_het = np.zeros(image_dim)
+    for d in range(image_dim):
+      image_het[d] = np.sum(np.ma.masked_where(mask[:, :, d] == 0, image[:, :, d]).filled(fill_value=0))
+    image_het = image_het / self.get_image_num(mask, image_dim)
+    return image_het 
+
+  def inpaint_image(self, image, fill, mcw, alpha_dim):
     result = np.zeros(image.shape)
     for x in range(mcw.shape[0]):
       for y in range(mcw.shape[1]):
-        if (mcw[x, y, 0] > 255/2):
+        if (mcw[x, y, 0] > self.threshold):
           result[x, y] = fill[x, y]
+          if alpha_dim: result[x, y, alpha_dim] = 255
         else:
           result[x, y] = image[x, y]
     return result
@@ -114,25 +109,24 @@ class Inpainter():
       inpainting using Gaussian conditional simulation, relying on a Kriging framework
       Special Thanks to:
         Gautier LOVEIKO for discussing his implementation
-        Au Khai Xiang for providing mathematical perspective and insight
+        Au Khai Xiang for providing mathematical insight
     '''
     for (image_path, mcw_path) in list(zip(self.image_paths, self.mcw_paths)):
-      v = F = F_result = cor_t_v = kriging_comp = innov_comp = full_result = alpha_dim = None
-      image = Image.open(image_path).convert('RGB')
       image_name = os.path.splitext(os.path.basename(image_path))[0]
       print("Starting inpainting of: " + str(image_name))
+      v = F = F_result = cor_t_v = kriging_comp = innov_comp = full_result = alpha_dim = None
+      image = Image.open(image_path).convert('LA')
+      if (image.mode in ('RGBA', 'LA') or (image.mode == 'P' and 'transparency' in image.info)):
+        alpha_dim = len(image.split()) - 1
       image = np.array(image)
-      mcw = np.array(Image.open(mcw_path))
-      alpha_dim = self.alpha_dim
-      alpha_image = None
       image_dim = int(image.size / (image.shape[0] * image.shape[1]))
       image = image.reshape((image.shape[0], image.shape[1], image_dim))
+      mcw = np.array(Image.open(mcw_path).convert('RGBA'))
 
-      threshold = 255 * 0.55
-      c_constraint = np.where(np.logical_and(mcw[:,:,[1]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
-      w_constraint = np.where(np.logical_and(mcw[:,:,[2]] > threshold, mcw[:,:,[alpha_dim]] > threshold if alpha_dim != None else True), [1]*image_dim, [0]*image_dim)
-      c_num = get_image_num(c_constraint, image_dim)
-      w_num = get_image_num(w_constraint, image_dim)
+      c_constraint = np.where(np.logical_and(mcw[:,:,[1]] > self.threshold, mcw[:,:,[3]] > self.threshold), [1]*image_dim, [0]*image_dim)
+      w_constraint = np.where(np.logical_and(mcw[:,:,[2]] > self.threshold, mcw[:,:,[3]] > self.threshold), [1]*image_dim, [0]*image_dim)
+      c_num = self.get_image_num(c_constraint, image_dim)
+      w_num = self.get_image_num(w_constraint, image_dim)
       '''
       9A. Compute
         v_het = 1/|w|*[SUMr_elem(w)(v(r)), SUMg_elem(g)(v(g)), SUMb_elem(b)(v(b))]
@@ -142,13 +136,11 @@ class Inpainter():
             v = u restricted to w
       '''
       v = np.ma.masked_where(w_constraint==0, image).filled(fill_value=0)
-      if alpha_dim != None: alpha_image = v[:,:,[alpha_dim]]
       v_shape = (v.shape[0], v.shape[1], image_dim)
 
-      v_het = get_image_het(v, w_constraint, image_dim)
+      v_het = self.get_image_het(v, w_constraint, image_dim)
       t_v = np.zeros(v_shape)
       t_v[:,:,...] = np.ma.masked_where(w_constraint==0, v-v_het).filled(fill_value=0) / math.sqrt(w_num)
-      t_v = get_image_cleaned(t_v, alpha_image, image_dim, alpha_dim)
       '''
       9B. Draw Gaussian Sample,
         F = convolve(t_v, W)
@@ -159,8 +151,7 @@ class Inpainter():
       F = np.zeros(v_shape)
       for dim in range(image_dim):
         F[:,:,dim] = convolve2d_fft(t_v[:,:,dim], W)
-      F = get_image_cleaned(F, alpha_image, image_dim, alpha_dim)
-      F_result = self.inpaint_image(image, F + v_het, mcw)
+      F_result = self.inpaint_image(image, F + v_het, mcw, alpha_dim)
       '''
       9C. Compute using LSS
         psi_1 = gamma_t |cxc (u|c - v_het)
@@ -176,7 +167,7 @@ class Inpainter():
       z = 0
       for x in range(mcw.shape[0]):
         for y in range(mcw.shape[1]):
-          if mcw[x, y, 1] > threshold:
+          if mcw[x, y, 1] > self.threshold and mcw[x, y, 3] < self.threshold:
             u_cond[z] = v[x, y]
             F_cond[z] = F[x, y]
             mapping[z] = [x, y]
@@ -206,7 +197,7 @@ class Inpainter():
         z = 0
         for x in range(mcw.shape[0]):
           for y in range(mcw.shape[1]):
-            if mcw[x, y, 1] > threshold:
+            if mcw[x, y, 1] > self.threshold and mcw[x, y, 3] < self.threshold:
               psi_1_[x, y, dim] = psi_1[z,dim]
               psi_2_[x, y, dim] = psi_2[z,dim]
               z += 1
@@ -232,7 +223,7 @@ class Inpainter():
       9F. Fill M with values of v_het + (u - v_het)^* + F - F^*
       '''
       fill =  kriging_comp +  F - innov_comp + v_het
-      full_result = self.inpaint_image(image, fill, mcw)
+      full_result = self.inpaint_image(image, fill, mcw, alpha_dim)
       self.debug(image_name, image_dim, v, F, F_result, cor_t_v, kriging_comp, innov_comp, full_result)
       print("Finished inpainting of: " + str(image_name))
 
