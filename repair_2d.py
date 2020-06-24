@@ -12,6 +12,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--image_path", type=str, default=os.path.dirname(os.path.abspath(__file__)) + "\\demo_inpaint")
 parser.add_argument("--opening_suffix", type=str, default="opening")
 parser.add_argument("--mask_suffix", type=str, default="mcw")
+parser.add_argument("--debug", type=int, default=0)
 
 def convolve2d_fft(A, B):
   tfA = np.fft.fft2(A)
@@ -64,7 +65,7 @@ class Inpainter():
           result[x, y] = image[x, y]
     return result
 
-  def debug(self, image_name, image_dim, v=None, F=None, F_result=None, cor_t_v=None, kriging_comp=None, innov_comp=None, full_result=None):
+  def output_debug(self, image_name, image_dim, v=None, F=None, F_result=None, cor_t_v=None, kriging_comp=None, innov_comp=None, full_result=None):
     if image_dim == 1:
       if v is not None: v = v.reshape((v.shape[0], v.shape[1]))
       if F is not None: F = F.reshape((F.shape[0], F.shape[1]))
@@ -81,10 +82,6 @@ class Inpainter():
       im = Image.fromarray(np.uint8(F))
       im.save(self.image_path + "/" + str(image_name) + " F.png")
       im.close()
-    if F_result is not None:
-      im = Image.fromarray(np.uint8(F_result))
-      im.save(self.image_path + "/" + str(image_name) + " F final.png")
-      im.close()
     if cor_t_v is not None:    
       im = Image.fromarray(np.uint8(cor_t_v))
       im.save(self.image_path + "/" + str(image_name) + " cor_t_v.png")
@@ -97,9 +94,18 @@ class Inpainter():
       im = Image.fromarray(np.uint8(innov_comp))
       im.save(self.image_path + "/" + str(image_name) + " innov.png")
       im.close()
+
+  def output_results(self, image_name, image_dim, F_result=None, full_result=None):
+    if image_dim == 1:
+      if F_result is not None: F_result = F_result.reshape((F_result.shape[0], F_result.shape[1]))
+      if full_result is not None: full_result = full_result.reshape((full_result.shape[0], full_result.shape[1]))
+    if F_result is not None:
+      im = Image.fromarray(np.uint8(F_result))
+      im.save(self.image_path + "/" + str(image_name) + " F_result.png")
+      im.close()
     if full_result is not None:
       im = Image.fromarray(np.uint8(full_result))
-      im.save(self.image_path + "/" + str(image_name) + " final.png")
+      im.save(self.image_path + "/" + str(image_name) + " full_result.png")
       im.close()
 
   def inpaint(self):
@@ -115,7 +121,7 @@ class Inpainter():
       image_name = os.path.splitext(os.path.basename(image_path))[0]
       print("Starting inpainting of: " + str(image_name))
       v = F = F_result = cor_t_v = kriging_comp = innov_comp = full_result = alpha_dim = None
-      image = Image.open(image_path).convert('LA')
+      image = Image.open(image_path)
       if (image.mode in ('RGBA', 'LA') or (image.mode == 'P' and 'transparency' in image.info)):
         alpha_dim = len(image.split()) - 1
       image = np.array(image)
@@ -224,7 +230,9 @@ class Inpainter():
       '''
       fill =  kriging_comp +  F - innov_comp + v_het
       full_result = self.inpaint_image(image, fill, mcw, alpha_dim)
-      self.debug(image_name, image_dim, v, F, F_result, cor_t_v, kriging_comp, innov_comp, full_result)
+      if bool(self.debug):
+        self.output_debug(image_name, image_dim, v, F, cor_t_v, kriging_comp, innov_comp)
+      self.output_results(image_name, image_dim, F_result, full_result)
       print("Finished inpainting of: " + str(image_name))
 
 if __name__ == "__main__":
