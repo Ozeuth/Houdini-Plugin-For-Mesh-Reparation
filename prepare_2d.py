@@ -132,6 +132,14 @@ if (pix):
     image = Image.fromarray(np.uint8(image))
     image.save(path_name + "/" + str(i) + "_opening.png")
 
+  '''
+  9. 2D inpainting
+    We follow B Galerne, A Leclaire[2017],
+      inpainting using Gaussian conditional simulation, relying on a Kriging framework
+      Special Thanks to:
+        Gautier LOVEIKO for discussing his implementation
+        Au Khai Xiang for providing mathematical insight
+  '''
   class Inpainter():
     def __init__(self, image_path, debug, opening_suffix="opening", mask_suffix="mcw"):
       self.image_path = image_path
@@ -207,14 +215,6 @@ if (pix):
         im.close()
 
     def inpaint(self):
-      '''
-      9. 2D inpainting
-      We follow B Galerne, A Leclaire[2017],
-        inpainting using Gaussian conditional simulation, relying on a Kriging framework
-        Special Thanks to:
-          Gautier LOVEIKO for discussing his implementation
-          Au Khai Xiang for providing mathematical insight
-      '''
       for (image_path, mcw_path) in list(zip(self.image_paths, self.mcw_paths)):
         image_name = os.path.splitext(os.path.basename(image_path))[0]
         print("Starting inpainting of: " + str(image_name))

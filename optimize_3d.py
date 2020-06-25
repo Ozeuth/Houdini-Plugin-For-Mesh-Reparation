@@ -86,9 +86,6 @@ if (pix):
     q = alpha * d
     x_true_res = x_prop_res / q
     y_true_res = y_prop_res / q
-    # TODO: For the sake of 2D inpainting later, we push the size to a square
-    x_true_res = max(x_true_res, y_true_res)
-    y_true_res = x_true_res
 
     # NOTE: Houdini Non-Commercial limited to 1280 x 720, so scale res down
     downscale = 1
