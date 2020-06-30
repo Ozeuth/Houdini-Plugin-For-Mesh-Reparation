@@ -59,6 +59,8 @@ def repair():
   '''
   matcher = nodesearch.Name("mesh_repairer")
   for node in matcher.nodes(hou.node("/obj/"), recursive=True):
+    if hou.node(node.path() + "/repeat_end"):
+      node_prep = hou.node(node.path() + "/repeat_end")
     if hou.node(node.path() + "/prepare_3d"):
       node_3d = hou.node(node.path() + "/prepare_3d")
     if hou.node(node.path() + "/optimize_3d"):
@@ -66,6 +68,7 @@ def repair():
     if hou.node(node.path() + "/prepare_2d"):
       node_2d = hou.node(node.path() + "/prepare_2d")
   assert (node_3d and node_op_3d and node_2d), ("ERROR: Please reinstate Digital Asset")
+  node_prep.parm("stopcondition").set(0)
   node_3d.bypass(False)
   '''
   4-6: 3D Context Region Optimization
@@ -94,6 +97,7 @@ def repair():
 
   '''
   8. Map 3D Context Region -> 2D Render
+  9. 2D repair
   '''
   #render_then_map(image_paths, node_2d)
   render_map_thread = Thread(target=render_then_map, args=(image_paths,node_2d,))

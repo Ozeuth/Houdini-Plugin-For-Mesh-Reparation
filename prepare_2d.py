@@ -332,7 +332,6 @@ if (pix):
           self.output_debug(image_name, image_dim, v, F, cor_t_v, kriging_comp, innov_comp)
         self.output_results(image_name, image_dim, F_result, full_result)
         print("Finished inpainting of: " + str(image_name))
-
   inpainter = Inpainter(path_name, False)
   inpainter.inpaint()
 node.bypass(True)
