@@ -7,7 +7,8 @@ inputs = node.inputs()
 for_node = hou.node(hou.parent().path() + "/repeat_end")
 '''
 1. Remove tooth faces
-tooth faces have > 1 boundary edges
+                     | 1 if f is n-gon with n-1 boundary edges
+  is_tooth_face(f) = | 0 otherwise
 '''
 def get_tooth_faces(edges):
   polygon_to_edges = defaultdict(list)
@@ -17,8 +18,8 @@ def get_tooth_faces(edges):
       if prim.type() == hou.primType.Polygon:
         polygon_to_edges[prim].append(edge)
   for key, value in polygon_to_edges.items():
-    if len(value) > 1:
-      tooth_faces.append(key)
+    if len(value) >= len(key.points()) - 1:
+      tooth_faces.append(key) 
   return tooth_faces
 
 reval = False
