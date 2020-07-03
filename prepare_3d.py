@@ -26,7 +26,7 @@ frame = hou.frame()
 path_name = hou.hipFile.name().split(".")[0]
 if not os.path.exists(path_name):
   os.makedirs(path_name)
-boundaries = inputs[1].geometry().pointGroups()
+boundaries = geo.pointGroups()
 try:
   for excess in range(len(boundaries-1), len(glob.glob(path_name + "/*.png"))):
     os.remove(path_name + "/" + str(excess) + "_opening.png")
@@ -34,6 +34,7 @@ except:
   for f in glob.glob(path_name + "/*.png"):
     os.remove(f)
 
+hou.session.reset_camera_info()
 # 1-3: Choose 3D Context Region
 i = 0
 resolutions_x = []
@@ -140,7 +141,6 @@ for boundary in boundaries:
                           0, 0, 0, 1)).transposed()
       hou.session.reset_camera(camera)
       camera.setWorldTransform(rotation_x * rotation_y * new_translation)
-
 
   hou.session.cameras_info["centers"].append(boundary_center)
   hou.session.cameras_info["rotationsx"].append(rotation_x)

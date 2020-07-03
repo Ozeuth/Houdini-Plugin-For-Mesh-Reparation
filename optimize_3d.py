@@ -7,17 +7,7 @@ node = hou.pwd()
 geo = node.geometry()
 boundary_node = node.inputs()[1]
 boundaries = boundary_node.geometry().pointGroups()
-edge_boundary_node = node.inputs()[2]
-
-edge_groups = edge_boundary_node.parm("group1").eval()
-target_edge_groups = ""
-for i in range(len(boundaries) - 1):
-  target_edge_groups += "group1__" + str(i) + " "
-target_edge_groups = target_edge_groups[:-1]
-if not target_edge_groups == edge_groups:
-  edge_boundary_node.parm("group1").set(target_edge_groups)
-
-edge_boundaries = edge_boundary_node.geometry().edgeGroups()
+edge_boundaries = boundary_node.geometry().edgeGroups()
 uv_node = hou.node(hou.parent().path() + "/uv_viewer")
 
 cameras_info = hou.session.cameras_info
@@ -36,7 +26,7 @@ if (pix):
   resolutions_y = []
   for i in range(1, len(boundaries)):
     boundary = boundaries[i]
-    edge_boundary = edge_boundaries[i-1]
+    edge_boundary = edge_boundaries[i]
     points = boundary.points()
     edges = edge_boundary.edges()
     min_x = float('inf')
@@ -160,7 +150,7 @@ if (pix):
         zoom_range_max = best_zoom_out
       tries += 1
     if (best_visible_points != max_visible_points): 
-      print("WARNING: not all points could be fit to the camera")
+      print("WARNING: not all points could be fit to camera " + str(i))
     camera_normal = plane_normal * best_zoom_out
     new_translation = hou.Matrix4((1, 0, 0, boundary_center[0] + camera_normal[0],
                           0, 1, 0, boundary_center[1] + camera_normal[1],

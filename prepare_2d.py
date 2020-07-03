@@ -33,10 +33,8 @@ def lss(A, b):
 
 node = hou.pwd()
 geo = node.geometry()
-boundary_node = node.inputs()[1]
-boundaries = boundary_node.geometry().pointGroups()
-edge_boundary_node = node.inputs()[2]
-edge_boundaries = edge_boundary_node.geometry().edgeGroups()
+boundaries = geo.pointGroups()
+edge_boundaries = geo.edgeGroups()
 
 is_alpha = bool(hou.session.find_parm(hou.parent(), "isAlpha"))
 '''
@@ -54,7 +52,7 @@ path_name = hou.hipFile.name().split(".")[0]
 if (pix):
   for i in range(1, len(boundaries)):
     boundary = boundaries[i]
-    edge_boundary = edge_boundaries[i-1]
+    edge_boundary = edge_boundaries[i]
     points = boundary.points()
     edges = edge_boundary.edges()
 
@@ -72,7 +70,7 @@ if (pix):
       x_res = camera.parm("resx").eval()
       y_res = camera.parm("resy").eval()
       uv_all_node.parm("campath").set(camera.path())
-      all_geo = node.inputs()[3].geometry()
+      all_geo = node.inputs()[1].geometry()
 
       pix_ratio = all_geo.findPointAttrib("pix_ratio")
       all_points = all_geo.points()

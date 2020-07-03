@@ -28,6 +28,13 @@ def reset_camera(camera):
   camera.parmTuple('t').set((0, 0, 0))
   camera.parmTuple('r').set((0, 0, 0))
 
+def reset_camera_info():
+  cameras_info["center"] = []
+  cameras_info["rotationsx"] = []
+  cameras_info["rotationsy"] = []
+  cameras_info["normals"] = []
+  cameras_info["zooms"] = []
+
 def render_then_map(image_paths, node_2d):
   '''
   NOTE: This is a tenuous solution to a synchronicity issue.
@@ -110,8 +117,4 @@ def repair():
   '''
   for node in mark_for_destroy:
     node.destroy()
-  cameras_info["center"] = []
-  cameras_info["rotationsx"] = []
-  cameras_info["rotationsy"] = []
-  cameras_info["normals"] = []
-  cameras_info["zooms"] = []
+  reset_camera_info()

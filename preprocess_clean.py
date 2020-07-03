@@ -11,7 +11,7 @@ edge_boundaries = geo.edgeGroups()
 # NOTE: points ordered, but ordering breaks after deletion
 for i in range(1, len(boundaries)):
   points = boundaries[i].points()
-  edges = edge_boundaries[i-1].edges()
+  edges = edge_boundaries[i].edges()
   '''
   2. Fill small holes with centroid-based method
                        | 1 if h has <= 6 points in it
