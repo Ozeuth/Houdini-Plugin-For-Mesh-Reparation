@@ -1,6 +1,7 @@
 import hou
 import math
 import numpy as np
+from collections import defaultdict
 
 node = hou.pwd()
 geo = node.geometry()
@@ -45,7 +46,7 @@ for i in range(1, len(boundaries)):
       edge_points = edge.points()
       for edge_point in edge_points:
         new_poly.addVertex(edge_point)
-  elif len(points) <= 10:
+  elif len(points) <= 12:
     '''
     3. Fill Medium hole with projection-based method
     3A. Initialize with minimum area triangulation
@@ -93,7 +94,7 @@ for i in range(1, len(boundaries)):
             min_cost_left, min_polys_left = self.tri_min(i, k)
             min_cost_right, min_polys_right = self.tri_min(k, j)
             curr_cost = cost_center + min_cost_left + min_cost_right
-            curr_polys = [(i, j, k)] + min_polys_left + min_polys_right
+            curr_polys = [(self.points[i], self.points[j], self.points[k])] + min_polys_left + min_polys_right
             if curr_cost < min_cost:
               min_cost = curr_cost
               potential_polys[curr_cost] = curr_polys
@@ -105,46 +106,97 @@ for i in range(1, len(boundaries)):
         if generate:
           for min_poly in min_polys:
             new_poly = self.geo.createPolygon()
-            new_poly.addVertex(self.points[min_poly[0]])
-            new_poly.addVertex(self.points[min_poly[1]])
-            new_poly.addVertex(self.points[min_poly[2]])
+            new_poly.addVertex(min_poly[0])
+            new_poly.addVertex(min_poly[1])
+            new_poly.addVertex(min_poly[2])
         return min_polys
     
     min_polys = MinTriangulation(geo, points, cache_costs=cache_lengths).min_triangulation(generate=False)
     '''
     3B. Conduct Triangle Splitting
       We split the minimum polygons with centroid-based method if:
-        ALL_t, t elem(i, j, m), sqrt(2) * ||vc-vt|| > s(vc) and sqrt(2) * ||vc-vt|| > s(vt)
+        ALL_t, t elem(p_i, p_j, p_k), sqrt(2) * ||p_c-t|| > s(p_c) and sqrt(2) * ||p_c-t|| > s(t)
         where
-          i, j, m = points of minimum polygon
-          c = center point of minimum polygon
-          s = scale factor function
+          p_i, p_j, p_k = points of minimum polygon
+          p_c = center point of minimum polygon
+          s = scale factor function, average length of edges connected to point except
+              for hole boundary edges
     '''
-    for edges_neighbor in (set(edges_neighbors)-set(edges)):
+    points_neighbors = defaultdict(list)
+    for edges_neighbor in edges_neighbors:
       p_1, p_2 = edges_neighbor.points()
+      points_neighbors[p_1.number()].append(p_2)
+      points_neighbors[p_2.number()].append(p_1)
       p1_pos = p_1.position()
       p2_pos = p_2.position()
       cache_lengths[unord_hash(p_1.number(), p_2.number())] = (p1_pos - p2_pos).length()
-
-    edge_points_hashed = []
-
+    
+    exterior_edges_hashed = []
     for edge in edges:
-      edge_points = edge.points()
-      edge_points_hashed.append(unord_hash(edge_points[0].number(), edge_points[1].number()))
+      p_1, p_2 = edge.points()
+      exterior_edges_hashed.append(unord_hash(p_1.number(), p_2.number()))
 
     interior_edges = []
     for min_poly in min_polys:
-      i, j, k = min_poly
-      p_i, p_j, p_k = points[i], points[j], points[k]
-      ts = [p_i, p_j, p_k]
-      # i and j are neighbour points, definitely not interior edge
-      if unord_hash(p_i.number(), p_k.number()) in edge_points_hashed:
+      p_i, p_j, p_k = min_poly
+      # i and j are neighbors on boundary loop, definitely not interior edge
+      if not unord_hash(p_i.number(), p_k.number()) in exterior_edges_hashed:
         interior_edges.append((min_poly[0], min_poly[2]))
-      if unord_hash(p_k.number(), p_j.number()) in edge_points_hashed:
+        points_neighbors[p_i.number()].append(p_k)
+        points_neighbors[p_k.number()].append(p_i)
+      if not unord_hash(p_k.number(), p_j.number()) in exterior_edges_hashed:
         interior_edges.append((min_poly[2], min_poly[1]))
-      
-      for t in ts:
-        print(t.prims())
+        points_neighbors[p_k.number()].append(p_j)
+        points_neighbors[p_j.number()].append(p_k)
+
+    new_min_polys = min_polys
+    min_polys_created = True
+    while min_polys_created:
+      min_polys_created = False
+      for min_poly in min_polys:
+        p_i, p_j, p_k = min_poly
+
+        center = (p_i.position() + p_j.position() + p_k.position()) / 3
+        eic_len = (center - p_i.position()).length()
+        ejc_len = (center - p_j.position()).length()
+        ekc_len = (center - p_k.position()).length()
+        c_scale = eic_len + ejc_len + ekc_len
+        c_normal = np.zeros(3)
+        ts = [p_i, p_j, p_k]
+        split = True
+        for t in ts:
+          c_normal += t.attribValue("N")
+          t_scale = 0
+          t_neighbors = points_neighbors[t.number()]
+          for t_neighbor in t_neighbors:
+            if not unord_hash(t.number(), t_neighbor.number()) in exterior_edges_hashed:
+              t_scale += cache_lengths[unord_hash(t.number(), t_neighbor.number())]
+          if math.sqrt(2) * (center - t.position()).length() <= min(t_scale, c_scale):
+            split = False
+            
+        c_normal /= 3
+        if split:
+          p_c = geo.createPoint()
+          p_c.setPosition(center)
+          p_c.setAttribValue("N", c_normal)
+          new_min_polys.remove((p_i, p_j, p_k))
+          new_min_polys.extend([(p_i, p_c, p_j), (p_i, p_c, p_k), (p_k, p_c, p_j)])
+          cache_lengths[unord_hash(p_i.number(), p_c.number())] = eic_len
+          cache_lengths[unord_hash(p_k.number(), p_c.number())] = ekc_len
+          cache_lengths[unord_hash(p_j.number(), p_c.number())] = ejc_len
+          points_neighbors[p_i.number()].append(p_c)
+          points_neighbors[p_j.number()].append(p_c)
+          points_neighbors[p_k.number()].append(p_c)
+          points_neighbors[p_c.number()] = [p_i, p_j, p_k]
+          min_polys_created = True
+    
+    for min_poly in new_min_polys:
+      p_i, p_j, p_k = min_poly
+      new_poly = geo.createPolygon()
+      new_poly.addVertex(p_i)
+      new_poly.addVertex(p_j)
+      new_poly.addVertex(p_k)
+
   else:
     '''
     4. Fill large hole with advancing front method
