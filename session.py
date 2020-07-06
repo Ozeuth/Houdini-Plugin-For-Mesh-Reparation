@@ -68,14 +68,14 @@ def repair():
   for node in matcher.nodes(hou.node("/obj/"), recursive=True):
     if hou.node(node.path() + "/repeat_end"):
       node_prep = hou.node(node.path() + "/repeat_end")
-    if hou.node(node.path() + "/preprocess_clean"):
-      node_prep_clean = hou.node(node.path() + "/preprocess_clean")
-    if hou.node(node.path() + "/prepare_3d"):
-      node_3d = hou.node(node.path() + "/prepare_3d")
-    if hou.node(node.path() + "/optimize_3d"):
-      node_op_3d = hou.node(node.path() + "/optimize_3d")
-    if hou.node(node.path() + "/prepare_2d"):
-      node_2d = hou.node(node.path() + "/prepare_2d")
+    if hou.node(node.path() + "/lf_3d"):
+      node_prep_clean = hou.node(node.path() + "/lf_3d")
+    if hou.node(node.path() + "/hf_prepare_3d"):
+      node_3d = hou.node(node.path() + "/hf_prepare_3d")
+    if hou.node(node.path() + "/hf_optimize_3d"):
+      node_op_3d = hou.node(node.path() + "/hf_optimize_3d")
+    if hou.node(node.path() + "/hf_prepare_2d"):
+      node_2d = hou.node(node.path() + "/hf_prepare_2d")
   assert (node_3d and node_op_3d and node_2d), ("ERROR: Please reinstate Digital Asset")
   node_prep.parm("stopcondition").set(0)
   node_prep_clean.bypass(False)
