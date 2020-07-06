@@ -1,4 +1,5 @@
 import hou
+import itertools
 import math
 import numpy as np
 from collections import defaultdict
@@ -56,14 +57,34 @@ for i in range(1, len(boundaries)):
     3. Fill Medium hole with projection-based method
     3A. Initialize with minimum area triangulation
     '''
-    cache_lengths = {}
+    e_lens_hashed = {}
     for i in range(len(points)):
       for j in range(i+1, len(points)):
         p_i, p_j = points[i], points[j]
         pi_pos = p_i.position()
         pj_pos = p_j.position()
-        cache_lengths[unord_hash(p_i.number(), p_j.number())] = (pi_pos - pj_pos).length()
-    
+        e_lens_hashed[unord_hash(p_i.number(), p_j.number())] = (pi_pos - pj_pos).length()
+
+    class VirtualPolygon():
+      # class to avoid generation of Houdini Polygons during intermediary phases
+      def __init__(self, p1, p2, p3):
+        self.p1, self.p2, self.p3 = p1, p2, p3
+      
+      def __eq__(self, other):
+        ps = [other.p1, other.p2, other.p3]
+        return (self.p1 in ps and self.p2 in ps and self.p3 in ps)
+
+      def __str__(self):
+        ps = [str(self.p1.number()), str(self.p2.number()), str(self.p3.number())]
+        ps.sort()
+        return "<" + ', '.join(ps) + ">"
+      
+      def __repr__(self):
+        return str(self)
+
+      def get_edges(self):
+        return list(itertools.combinations([self.p1, self.p2, self.p3], 2))
+
     class MinTriangulation():
       def __init__(self, geo, points, cache_costs=None):
         if cache_costs is None:
@@ -99,7 +120,7 @@ for i in range(1, len(boundaries)):
             min_cost_left, min_polys_left = self.tri_min(i, k)
             min_cost_right, min_polys_right = self.tri_min(k, j)
             curr_cost = cost_center + min_cost_left + min_cost_right
-            curr_polys = [(self.points[i], self.points[j], self.points[k])] + min_polys_left + min_polys_right
+            curr_polys = [VirtualPolygon(self.points[i], self.points[j], self.points[k])] + min_polys_left + min_polys_right
             if curr_cost < min_cost:
               min_cost = curr_cost
               potential_polys[curr_cost] = curr_polys
@@ -111,12 +132,12 @@ for i in range(1, len(boundaries)):
         if generate:
           for min_poly in min_polys:
             new_poly = self.geo.createPolygon()
-            new_poly.addVertex(min_poly[0])
-            new_poly.addVertex(min_poly[1])
-            new_poly.addVertex(min_poly[2])
+            new_poly.addVertex(min_poly.p1)
+            new_poly.addVertex(min_poly.p2)
+            new_poly.addVertex(min_poly.p3)
         return min_polys
     
-    min_polys = MinTriangulation(geo, points, cache_costs=cache_lengths).min_triangulation(generate=False)
+    min_polys = MinTriangulation(geo, points, cache_costs=e_lens_hashed).min_triangulation(generate=False)
     '''
     3B. Conduct Triangle Splitting
       We split the minimum polygons with centroid-based method if:
@@ -136,20 +157,19 @@ for i in range(1, len(boundaries)):
         points_neighbors[p_2.number()].append(p_1)
       p1_pos = p_1.position()
       p2_pos = p_2.position()
-      cache_lengths[unord_hash(p_1.number(), p_2.number())] = (p1_pos - p2_pos).length()
+      e_lens_hashed[unord_hash(p_1.number(), p_2.number())] = (p1_pos - p2_pos).length()
     
     exterior_edges_hashed = []
     for edge in edges:
       p_1, p_2 = edge.points()
       exterior_edges_hashed.append(unord_hash(p_1.number(), p_2.number()))
-    interior_edges = []
+    interior_edges_neighbors = defaultdict(list)
     for min_poly in min_polys:
-      for p_1 in min_poly:
-        for p_2 in filter(lambda x: x != p_1, min_poly):
-          if not unord_hash(p_1.number(), p_2.number()) in exterior_edges_hashed:
-            interior_edges.append((p_1, p_2))
-            points_neighbors[p_2.number()].append(p_1)
-            points_neighbors[p_1.number()].append(p_2)
+      for p_1, p_2 in min_poly.get_edges():
+        if not unord_hash(p_1.number(), p_2.number()) in exterior_edges_hashed:
+          interior_edges_neighbors[unord_hash(p_1.number(), p_2.number())].append(min_poly)
+          points_neighbors[p_2.number()].append(p_1)
+          points_neighbors[p_1.number()].append(p_2)
 
     new_min_polys = min_polys
     min_polys_created = True
@@ -157,11 +177,11 @@ for i in range(1, len(boundaries)):
       min_polys_created = False
       fixed_new_min_polys = new_min_polys
       for min_poly in fixed_new_min_polys:
-        p_i, p_j, p_k = min_poly
+        p_i, p_j, p_k = min_poly.p1, min_poly.p2, min_poly.p3
         ts = [p_i, p_j, p_k]
         center = (p_i.position() + p_j.position() + p_k.position()) / 3
-        eic_len, ejc_len, ekc_len = (center - p_i.position()).length(), (center - p_j.position()).length(), (center - p_k.position()).length()
-        c_scale = eic_len + ejc_len + ekc_len
+        e_lens = [(center - p_i.position()).length(), (center - p_j.position()).length(), (center - p_k.position()).length()]
+        c_scale = sum(e_lens)
         c_normal = np.zeros(3)
 
         split = True
@@ -170,8 +190,7 @@ for i in range(1, len(boundaries)):
           t_scale = 0
           t_neighbors = points_neighbors[t.number()]
           for t_neighbor in t_neighbors:
-            if not unord_hash(t.number(), t_neighbor.number()) in exterior_edges_hashed:
-              t_scale += cache_lengths[unord_hash(t.number(), t_neighbor.number())]
+            t_scale += e_lens_hashed[unord_hash(t.number(), t_neighbor.number())]
           if math.sqrt(2) * (center - t.position()).length() <= min(t_scale, c_scale):
             split = False
         c_normal /= 3
@@ -180,27 +199,25 @@ for i in range(1, len(boundaries)):
           p_c = geo.createPoint()
           p_c.setPosition(center)
           p_c.setAttribValue("N", c_normal)
-          new_min_polys.remove((p_i, p_j, p_k))
-          new_min_polys.extend([(p_i, p_c, p_j), (p_i, p_c, p_k), (p_k, p_c, p_j)])
-          cache_lengths[unord_hash(p_i.number(), p_c.number())] = eic_len
-          cache_lengths[unord_hash(p_k.number(), p_c.number())] = ekc_len
-          cache_lengths[unord_hash(p_j.number(), p_c.number())] = ejc_len
-          points_neighbors[p_i.number()].append(p_c)
-          points_neighbors[p_j.number()].append(p_c)
-          points_neighbors[p_k.number()].append(p_c)
-          points_neighbors[p_c.number()] = [p_i, p_j, p_k]
+          new_min_polys.remove(min_poly)
+          new_min_polys.extend([VirtualPolygon(p_i, p_c, p_j), VirtualPolygon(p_i, p_c, p_k), VirtualPolygon(p_k, p_c, p_j)])
+          for t in ts:
+            e_lens_hashed[unord_hash(t.number(), p_c.number())] = e_lens.pop()
+            points_neighbors[t.number()].append(p_c)
+            others = list(filter(lambda x: x != t, ts))
+            interior_edges_neighbors[unord_hash(t.number(), p_c.number())] = [VirtualPolygon(t, p_c, others[0]), VirtualPolygon(t, p_c, others[1])]
+          points_neighbors[p_c.number()] = ts
+          for t_1, t_2 in min_poly.get_edges():
+            if not unord_hash(t_1.number(), t_2.number()) in exterior_edges_hashed:
+              interior_edges_neighbors[unord_hash(t_1.number(), t_2.number())].remove(min_poly)
+              interior_edges_neighbors[unord_hash(t_1.number(), t_2.number())].append(VirtualPolygon(t_1, p_c, t_2))
           min_polys_created = True
-    
-    for min_poly in new_min_polys:
-      p_i, p_j, p_k = min_poly
-      new_poly = geo.createPolygon()
-      new_poly.addVertex(p_i)
-      new_poly.addVertex(p_j)
-      new_poly.addVertex(p_k)
     '''
     3C. Conduct Edge-Swapping
+      For two new triangles adjacent to one edge, check each triangle's two-mutual vertices.
+      Swap the edge to connect the two mutual vertices if the vertex lies outside the circumsphere
+      of the opposing triangle
     '''
-
   else:
     '''
     4. Fill large hole with advancing front method
