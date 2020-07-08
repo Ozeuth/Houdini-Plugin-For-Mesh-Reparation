@@ -85,6 +85,15 @@ for i in range(1, len(boundaries)):
       def get_edges(self):
         return list(itertools.combinations([self.p1, self.p2, self.p3], 2))
 
+      def get_common_edge(self, other):
+        edge_points = []
+        self_ps = [self.p1, self.p2, self.p3]
+        ps = [other.p1, other.p2, other.p3]
+        for self_p in self_ps:
+          if self_p in ps:
+            edge_points.append(self_p)
+        return edge_points
+        
     class MinTriangulation():
       def __init__(self, geo, points, cache_costs=None):
         if cache_costs is None:
@@ -214,10 +223,49 @@ for i in range(1, len(boundaries)):
           min_polys_created = True
     '''
     3C. Conduct Edge-Swapping
-      For two new triangles adjacent to one edge, check each triangle's two-mutual vertices.
-      Swap the edge to connect the two mutual vertices if the vertex lies outside the circumsphere
-      of the opposing triangle
+      For two new polygons (p_i, p_j, p_k), (p_i, p_j, p_m) adjacent to interior edge eij,
+                                | 1 p_k lies outside circumsphere created with p_i, p_j, p_m
+                                |   OR p_m lies outside cirumsphere created with p_i, p_j, p_k
+      is_locally_delaunay(ts) = | 0 otherwise
+      if two polygons are not locally delaunay, swap edges. Replace eij with ekm.
     '''
+    marked_for_update = {}
+    marked_for_deletion = []
+    for interior_edge in interior_edges_neighbors:
+      poly_1, poly_2 = interior_edges_neighbors[interior_edge]
+      common_edge = poly_1.get_common_edge(poly_2)
+      poly_1_p = list(set([poly_1.p1, poly_1.p2, poly_1.p3]) - set(common_edge))[0]
+      poly_2_p = list(set([poly_2.p1, poly_2.p2, poly_2.p3]) - set(common_edge))[0]
+      
+      poly_1_c_1 = (common_edge[0].position() + poly_1_p.position()) / 2
+      poly_1_c_2 = (common_edge[1].position() + poly_1_p.position()) / 2
+      poly_1_e_1 = common_edge[0].position() - poly_1_p.position()
+      poly_1_e_2 = common_edge[1].position() - poly_1_p.position()
+      poly_1_v_1 = hou.Vector3(1, 1, -1 * (poly_1_e_1[0] + poly_1_e_1[1]) / poly_1_e_1[2])
+      poly_1_v_2 = hou.Vector3(1, 1, -1 * (poly_1_e_2[0] + poly_1_e_2[1]) / poly_1_e_2[2])
+
+      poly_1_alpha = (poly_1_c_2[2] - poly_1_c_1[2] + (poly_1_c_1[1] - poly_1_c_2[1]) * poly_1_v_2[2]
+              / (poly_1_v_1[2] - poly_1_v_2[2]))
+      poly_1_circumsphere_c = poly_1_c_1 + poly_1_alpha * poly_1_v_1
+      poly_1_circumsphere_r = (poly_1_circumsphere_c - poly_1_p.position()).length()
+      
+      if (poly_1_circumsphere_c - poly_2_p.position()).length() < poly_1_circumsphere_r:
+        new_poly_1 = VirtualPolygon(poly_1_p, common_edge[0], poly_2_p)
+        new_poly_2 = VirtualPolygon(poly_1_p, common_edge[1], poly_2_p)
+        new_min_polys.remove(poly_1)
+        new_min_polys.remove(poly_2)
+        new_min_polys.extend([new_poly_1, new_poly_2])
+        marked_for_deletion.append(interior_edge)
+        marked_for_update[unord_hash(poly_1_p.number(), poly_2_p.number())] = [new_poly_1, new_poly_2]
+    for marked in marked_for_deletion:
+      del interior_edges_neighbors[marked]
+    interior_edges_neighbors.update(marked_for_update)
+
+    for min_poly in new_min_polys:
+      new_poly = geo.createPolygon()
+      new_poly.addVertex(min_poly.p1)
+      new_poly.addVertex(min_poly.p2)
+      new_poly.addVertex(min_poly.p3)
   else:
     '''
     4. Fill large hole with advancing front method
