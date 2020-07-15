@@ -160,10 +160,8 @@ for i in range(1, len(boundaries)):
     points_neighbors = defaultdict(list)
     for edges_neighbor in list(set(edges_neighbors) - set(edges)):
       p_1, p_2 = edges_neighbor.points()
-      if p_1 in points:
-        points_neighbors[p_1.number()].append(p_2)
-      elif p_2 in points:
-        points_neighbors[p_2.number()].append(p_1)
+      points_neighbors[p_1].append(p_2)
+      points_neighbors[p_2].append(p_1)
       p1_pos = p_1.position()
       p2_pos = p_2.position()
       e_lens_hashed[unord_hash(p_1.number(), p_2.number())] = (p1_pos - p2_pos).length()
@@ -177,8 +175,8 @@ for i in range(1, len(boundaries)):
       for p_1, p_2 in min_poly.get_edges():
         if not unord_hash(p_1.number(), p_2.number()) in exterior_edges_hashed:
           interior_edges_neighbors[unord_hash(p_1.number(), p_2.number())].append(min_poly)
-          points_neighbors[p_2.number()].append(p_1)
-          points_neighbors[p_1.number()].append(p_2)
+          points_neighbors[p_2].append(p_1)
+          points_neighbors[p_1].append(p_2)
 
     new_min_polys = min_polys
     min_polys_created = True
@@ -197,7 +195,7 @@ for i in range(1, len(boundaries)):
         for t in ts:
           c_normal += t.attribValue("N")
           t_scale = 0
-          t_neighbors = points_neighbors[t.number()]
+          t_neighbors = points_neighbors[t]
           for t_neighbor in t_neighbors:
             t_scale += e_lens_hashed[unord_hash(t.number(), t_neighbor.number())]
           if math.sqrt(2) * (center - t.position()).length() <= min(t_scale, c_scale):
@@ -212,10 +210,10 @@ for i in range(1, len(boundaries)):
           new_min_polys.extend([VirtualPolygon(p_i, p_c, p_j), VirtualPolygon(p_i, p_c, p_k), VirtualPolygon(p_k, p_c, p_j)])
           for t in ts:
             e_lens_hashed[unord_hash(t.number(), p_c.number())] = e_lens.pop()
-            points_neighbors[t.number()].append(p_c)
+            points_neighbors[t].append(p_c)
             others = list(filter(lambda x: x != t, ts))
             interior_edges_neighbors[unord_hash(t.number(), p_c.number())] = [VirtualPolygon(t, p_c, others[0]), VirtualPolygon(t, p_c, others[1])]
-          points_neighbors[p_c.number()] = ts
+          points_neighbors[p_c] = ts
           for t_1, t_2 in min_poly.get_edges():
             if not unord_hash(t_1.number(), t_2.number()) in exterior_edges_hashed:
               interior_edges_neighbors[unord_hash(t_1.number(), t_2.number())].remove(min_poly)
@@ -257,6 +255,10 @@ for i in range(1, len(boundaries)):
         new_min_polys.extend([new_poly_1, new_poly_2])
         marked_for_deletion.append(interior_edge)
         marked_for_update[unord_hash(poly_1_p.number(), poly_2_p.number())] = [new_poly_1, new_poly_2]
+        points_neighbors[common_edge[0]].remove(common_edge[1])
+        points_neighbors[common_edge[1]].remove(common_edge[0])
+        points_neighbors[poly_1_p].append(poly_2_p)
+        points_neighbors[poly_2_p].append(poly_1_p)
     for marked in marked_for_deletion:
       del interior_edges_neighbors[marked]
     interior_edges_neighbors.update(marked_for_update)
@@ -266,6 +268,33 @@ for i in range(1, len(boundaries)):
       new_poly.addVertex(min_poly.p1)
       new_poly.addVertex(min_poly.p2)
       new_poly.addVertex(min_poly.p3)
+    '''
+    3D. Conduct Patch Fairing.
+    Compute the Laplace Beltrami Matrix,
+         pi  pj  pk
+    pi | Li  Wij Wik |
+    pj | Wji Lj  Wjk |
+    pk | Wki Wkj Lk  |
+    where
+      Li = Wij + Wik + ...
+      Wij = 0.5*(cot(alpha) + cot(beta))
+      where for two polygons (p_i, p_j, p_k), (p_i, p_j, p_m) adjacent to interior edge eij,
+        alpha = angle_ikj
+        beta = angle_imj
+    '''
+    laplace_beltrami = np.zeros((len(points_neighbors), len(points_neighbors)))
+    ref_keys = list(points_neighbors.keys())
+    for p_i in points_neighbors:
+      ref_i = ref_keys.index(p_i)
+      for p_j in points_neighbors[p_i]:
+        ref_j = ref_keys.index(p_j)
+        poly_1, poly_2 = interior_edges_neighbors[unord_hash(p_i.number(), p_j.number())]
+        poly_1_p = list(set([poly_1.p1, poly_1.p2, poly_1.p3]) - set([p_i, p_j]))[0]
+        poly_2_p = list(set([poly_2.p1, poly_2.p2, poly_2.p3]) - set([p_i, p_j]))[0]
+        
+        laplace_beltrami[ref_i, ref_j] = 0
+      laplace_beltrami[ref_i, ref_i] = sum(laplace_beltrami[ref_i])
+
   else:
     '''
     4. Fill large hole with advancing front method
