@@ -17,9 +17,9 @@ for edge_group in geo.edgeGroups():
 
 def unord_hash(a, b):
   if a < b:
-    return a * (b - 1) + math.trunc(math.pow(b - a - 1, 2)/ 4)
+    return a * (b - 1) + math.trunc(math.pow(b - a - 2, 2)/ 4)
   elif a > b:
-    return (a - 1) * b + math.trunc(math.pow(a - b - 1, 2)/ 4)
+    return (a - 1) * b + math.trunc(math.pow(a - b - 2, 2)/ 4)
   else:
     return a * b + math.trunc(math.pow(abs(a - b) - 1, 2)/ 4)
 
@@ -67,31 +67,41 @@ for i in range(1, len(boundaries)):
 
     class VirtualPolygon():
       # class to avoid generation of Houdini Polygons during intermediary phases
-      def __init__(self, p1, p2, p3):
-        self.p1, self.p2, self.p3 = p1, p2, p3
-      
+      # works for triangles and quads
+      def __init__(self, ps):
+        self.ps = ps
+        self.tri = (len(ps) == 3)
+
       def __eq__(self, other):
-        ps = [other.p1, other.p2, other.p3]
-        return (self.p1 in ps and self.p2 in ps and self.p3 in ps)
+        same = True
+        for p in self.ps:
+          same = same and (p in other.ps)
+        return same
 
       def __str__(self):
-        ps = [str(self.p1.number()), str(self.p2.number()), str(self.p3.number())]
-        ps.sort()
-        return "<" + ', '.join(ps) + ">"
-      
+        string = []
+        for p in self.ps:
+          string.append(str(p.number()))
+        string.sort()
+        return "<" + ', '.join(string) + ">"
+
       def __repr__(self):
         return str(self)
 
       def get_edges(self):
-        return list(itertools.combinations([self.p1, self.p2, self.p3], 2))
+        combinations = list(itertools.combinations(self.ps, 2))
+        if self.tri:
+          return combinations
+        combinations_lengths = []
+        for combination in combinations:
+          combinations_lengths.append((combination[0].position() - combination[1].position()).length())
+        return [edge for _, edge in sorted(zip(combinations_lengths, combinations))][2:]
 
       def get_common_edge(self, other):
         edge_points = []
-        self_ps = [self.p1, self.p2, self.p3]
-        ps = [other.p1, other.p2, other.p3]
-        for self_p in self_ps:
-          if self_p in ps:
-            edge_points.append(self_p)
+        for p in self.ps:
+          if p in other.ps:
+            edge_points.append(p)
         return edge_points
         
     class MinTriangulation():
@@ -129,7 +139,7 @@ for i in range(1, len(boundaries)):
             min_cost_left, min_polys_left = self.tri_min(i, k)
             min_cost_right, min_polys_right = self.tri_min(k, j)
             curr_cost = cost_center + min_cost_left + min_cost_right
-            curr_polys = [VirtualPolygon(self.points[i], self.points[j], self.points[k])] + min_polys_left + min_polys_right
+            curr_polys = [VirtualPolygon([self.points[i], self.points[j], self.points[k]])] + min_polys_left + min_polys_right
             if curr_cost < min_cost:
               min_cost = curr_cost
               potential_polys[curr_cost] = curr_polys
@@ -141,9 +151,8 @@ for i in range(1, len(boundaries)):
         if generate:
           for min_poly in min_polys:
             new_poly = self.geo.createPolygon()
-            new_poly.addVertex(min_poly.p1)
-            new_poly.addVertex(min_poly.p2)
-            new_poly.addVertex(min_poly.p3)
+            for p in min_poly.ps:
+              new_poly.addVertex(p)
         return min_polys
     
     min_polys = MinTriangulation(geo, points, cache_costs=e_lens_hashed).min_triangulation(generate=False)
@@ -158,6 +167,7 @@ for i in range(1, len(boundaries)):
               for hole boundary edges
     '''
     points_neighbors = defaultdict(list)
+    exterior_edges_neighbors = defaultdict(list)
     for edges_neighbor in list(set(edges_neighbors) - set(edges)):
       p_1, p_2 = edges_neighbor.points()
       points_neighbors[p_1].append(p_2)
@@ -165,6 +175,9 @@ for i in range(1, len(boundaries)):
       p1_pos = p_1.position()
       p2_pos = p_2.position()
       e_lens_hashed[unord_hash(p_1.number(), p_2.number())] = (p1_pos - p2_pos).length()
+      for prim in edges_neighbor.prims():
+        if prim.type() == hou.primType.Polygon:
+          exterior_edges_neighbors[unord_hash(p_1.number(), p_2.number())].append(VirtualPolygon(prim.points()))
     
     exterior_edges_hashed = []
     for edge in edges:
@@ -184,7 +197,7 @@ for i in range(1, len(boundaries)):
       min_polys_created = False
       fixed_new_min_polys = new_min_polys
       for min_poly in fixed_new_min_polys:
-        p_i, p_j, p_k = min_poly.p1, min_poly.p2, min_poly.p3
+        p_i, p_j, p_k = min_poly.ps
         ts = [p_i, p_j, p_k]
         center = (p_i.position() + p_j.position() + p_k.position()) / 3
         e_lens = [(center - p_i.position()).length(), (center - p_j.position()).length(), (center - p_k.position()).length()]
@@ -207,17 +220,17 @@ for i in range(1, len(boundaries)):
           p_c.setPosition(center)
           p_c.setAttribValue("N", c_normal)
           new_min_polys.remove(min_poly)
-          new_min_polys.extend([VirtualPolygon(p_i, p_c, p_j), VirtualPolygon(p_i, p_c, p_k), VirtualPolygon(p_k, p_c, p_j)])
+          new_min_polys.extend([VirtualPolygon([p_i, p_c, p_j]), VirtualPolygon([p_i, p_c, p_k]), VirtualPolygon([p_k, p_c, p_j])])
           for t in ts:
             e_lens_hashed[unord_hash(t.number(), p_c.number())] = e_lens.pop()
             points_neighbors[t].append(p_c)
             others = list(filter(lambda x: x != t, ts))
-            interior_edges_neighbors[unord_hash(t.number(), p_c.number())] = [VirtualPolygon(t, p_c, others[0]), VirtualPolygon(t, p_c, others[1])]
+            interior_edges_neighbors[unord_hash(t.number(), p_c.number())] = [VirtualPolygon([t, p_c, others[0]]), VirtualPolygon([t, p_c, others[1]])]
           points_neighbors[p_c] = ts
           for t_1, t_2 in min_poly.get_edges():
             if not unord_hash(t_1.number(), t_2.number()) in exterior_edges_hashed:
               interior_edges_neighbors[unord_hash(t_1.number(), t_2.number())].remove(min_poly)
-              interior_edges_neighbors[unord_hash(t_1.number(), t_2.number())].append(VirtualPolygon(t_1, p_c, t_2))
+              interior_edges_neighbors[unord_hash(t_1.number(), t_2.number())].append(VirtualPolygon([t_1, p_c, t_2]))
           min_polys_created = True
     '''
     3C. Conduct Edge-Swapping
@@ -229,11 +242,12 @@ for i in range(1, len(boundaries)):
     '''
     marked_for_update = {}
     marked_for_deletion = []
+
     for interior_edge in interior_edges_neighbors:
       poly_1, poly_2 = interior_edges_neighbors[interior_edge]
       common_edge = poly_1.get_common_edge(poly_2)
-      poly_1_p = list(set([poly_1.p1, poly_1.p2, poly_1.p3]) - set(common_edge))[0]
-      poly_2_p = list(set([poly_2.p1, poly_2.p2, poly_2.p3]) - set(common_edge))[0]
+      poly_1_p = list(set(poly_1.ps) - set(common_edge))[0]
+      poly_2_p = list(set(poly_2.ps) - set(common_edge))[0]
       
       poly_1_c_1 = (common_edge[0].position() + poly_1_p.position()) / 2
       poly_1_c_2 = (common_edge[1].position() + poly_1_p.position()) / 2
@@ -248,11 +262,28 @@ for i in range(1, len(boundaries)):
       poly_1_circumsphere_r = (poly_1_circumsphere_c - poly_1_p.position()).length()
       
       if (poly_1_circumsphere_c - poly_2_p.position()).length() < poly_1_circumsphere_r:
-        new_poly_1 = VirtualPolygon(poly_1_p, common_edge[0], poly_2_p)
-        new_poly_2 = VirtualPolygon(poly_1_p, common_edge[1], poly_2_p)
+        new_poly_1 = VirtualPolygon([poly_1_p, common_edge[0], poly_2_p])
+        new_poly_2 = VirtualPolygon([poly_1_p, common_edge[1], poly_2_p])
         new_min_polys.remove(poly_1)
         new_min_polys.remove(poly_2)
         new_min_polys.extend([new_poly_1, new_poly_2])
+        # 4 interior_edges_neighbors could potentially need updating
+        e1, e2, e3, e4 = (unord_hash(poly_1_p.number(), common_edge[0].number()),
+                          unord_hash(poly_1_p.number(), common_edge[1].number()),
+                          unord_hash(poly_2_p.number(), common_edge[0].number()),
+                          unord_hash(poly_2_p.number(), common_edge[1].number()))
+        if e1 in interior_edges_neighbors:
+          interior_edges_neighbors[e1].remove(poly_1)
+          interior_edges_neighbors[e1].append(new_poly_1)
+        if e2 in interior_edges_neighbors:
+          interior_edges_neighbors[e2].remove(poly_1)
+          interior_edges_neighbors[e2].append(new_poly_2)
+        if e3 in interior_edges_neighbors:
+          interior_edges_neighbors[e3].remove(poly_2)
+          interior_edges_neighbors[e3].append(new_poly_1)
+        if e4 in interior_edges_neighbors:
+          interior_edges_neighbors[e4].remove(poly_2)
+          interior_edges_neighbors[e4].append(new_poly_2)
         marked_for_deletion.append(interior_edge)
         marked_for_update[unord_hash(poly_1_p.number(), poly_2_p.number())] = [new_poly_1, new_poly_2]
         points_neighbors[common_edge[0]].remove(common_edge[1])
@@ -265,9 +296,8 @@ for i in range(1, len(boundaries)):
 
     for min_poly in new_min_polys:
       new_poly = geo.createPolygon()
-      new_poly.addVertex(min_poly.p1)
-      new_poly.addVertex(min_poly.p2)
-      new_poly.addVertex(min_poly.p3)
+      for p in min_poly.ps:
+        new_poly.addVertex(p)
     '''
     3D. Conduct Patch Fairing.
     Compute the Laplace Beltrami Matrix,
@@ -288,10 +318,10 @@ for i in range(1, len(boundaries)):
       ref_i = ref_keys.index(p_i)
       for p_j in points_neighbors[p_i]:
         ref_j = ref_keys.index(p_j)
-        poly_1, poly_2 = interior_edges_neighbors[unord_hash(p_i.number(), p_j.number())]
-        poly_1_p = list(set([poly_1.p1, poly_1.p2, poly_1.p3]) - set([p_i, p_j]))[0]
-        poly_2_p = list(set([poly_2.p1, poly_2.p2, poly_2.p3]) - set([p_i, p_j]))[0]
-        
+        if unord_hash(p_i.number(), p_j.number()) in interior_edges_neighbors:
+          poly_1, poly_2 = interior_edges_neighbors[unord_hash(p_i.number(), p_j.number())]
+        elif unord_hash(p_i.number(), p_j.number()) in exterior_edges_neighbors:
+          poly_1, poly_2 = exterior_edges_neighbors[unord_hash(p_i.number(), p_j.number())]
         laplace_beltrami[ref_i, ref_j] = 0
       laplace_beltrami[ref_i, ref_i] = sum(laplace_beltrami[ref_i])
 
