@@ -267,25 +267,22 @@ for i in range(1, len(boundaries)):
         new_min_polys.remove(poly_1)
         new_min_polys.remove(poly_2)
         new_min_polys.extend([new_poly_1, new_poly_2])
+
+        marked_for_deletion.append(interior_edge)
+        marked_for_update[unord_hash(poly_1_p.number(), poly_2_p.number())] = [new_poly_1, new_poly_2]
         # 4 interior_edges_neighbors could potentially need updating
         e1, e2, e3, e4 = (unord_hash(poly_1_p.number(), common_edge[0].number()),
                           unord_hash(poly_1_p.number(), common_edge[1].number()),
                           unord_hash(poly_2_p.number(), common_edge[0].number()),
                           unord_hash(poly_2_p.number(), common_edge[1].number()))
-        if e1 in interior_edges_neighbors:
-          interior_edges_neighbors[e1].remove(poly_1)
-          interior_edges_neighbors[e1].append(new_poly_1)
-        if e2 in interior_edges_neighbors:
-          interior_edges_neighbors[e2].remove(poly_1)
-          interior_edges_neighbors[e2].append(new_poly_2)
-        if e3 in interior_edges_neighbors:
-          interior_edges_neighbors[e3].remove(poly_2)
-          interior_edges_neighbors[e3].append(new_poly_1)
-        if e4 in interior_edges_neighbors:
-          interior_edges_neighbors[e4].remove(poly_2)
-          interior_edges_neighbors[e4].append(new_poly_2)
-        marked_for_deletion.append(interior_edge)
-        marked_for_update[unord_hash(poly_1_p.number(), poly_2_p.number())] = [new_poly_1, new_poly_2]
+        old_ps = [poly_1, poly_1, poly_2, poly_2]
+        new_ps = [new_poly_1, new_poly_2, new_poly_1, new_poly_2]
+        for e_i, e in enumerate([e1, e2, e3, e4]):
+          if ((e in interior_edges_neighbors and not e in marked_for_deletion) or (e in marked_for_update)):
+            update = interior_edges_neighbors if (e in interior_edges_neighbors and not e in marked_for_deletion) else marked_for_update
+            update[e].remove(old_ps[e_i])
+            update[e].append(new_ps[e_i])
+        
         points_neighbors[common_edge[0]].remove(common_edge[1])
         points_neighbors[common_edge[1]].remove(common_edge[0])
         points_neighbors[poly_1_p].append(poly_2_p)
