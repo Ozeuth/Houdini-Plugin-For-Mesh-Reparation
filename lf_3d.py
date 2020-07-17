@@ -95,7 +95,7 @@ for i in range(1, len(boundaries)):
         combinations_lengths = []
         for combination in combinations:
           combinations_lengths.append((combination[0].position() - combination[1].position()).length())
-        return [edge for _, edge in sorted(zip(combinations_lengths, combinations))][2:]
+        return [edge for _, edge in sorted(zip(combinations_lengths, combinations))][:-2]
 
       def get_common_edge(self, other):
         edge_points = []
@@ -309,18 +309,36 @@ for i in range(1, len(boundaries)):
         alpha = angle_ikj
         beta = angle_imj
     '''
+    hole_edges_neighbors = {}
+    hole_edges_neighbors.update(interior_edges_neighbors)
+    hole_edges_neighbors.update(exterior_edges_neighbors)
     laplace_beltrami = np.zeros((len(points_neighbors), len(points_neighbors)))
     ref_keys = list(points_neighbors.keys())
     for p_i in points_neighbors:
       ref_i = ref_keys.index(p_i)
       for p_j in points_neighbors[p_i]:
         ref_j = ref_keys.index(p_j)
-        if unord_hash(p_i.number(), p_j.number()) in interior_edges_neighbors:
-          poly_1, poly_2 = interior_edges_neighbors[unord_hash(p_i.number(), p_j.number())]
-        elif unord_hash(p_i.number(), p_j.number()) in exterior_edges_neighbors:
-          poly_1, poly_2 = exterior_edges_neighbors[unord_hash(p_i.number(), p_j.number())]
-        laplace_beltrami[ref_i, ref_j] = 0
+        if unord_hash(p_i.number(), p_j.number()) in hole_edges_neighbors:
+          poly_1, poly_2 = hole_edges_neighbors[unord_hash(p_i.number(), p_j.number())]
+          poly_1_p, poly_2_p = None, None
+          for poly_e in poly_1.get_edges():
+            if p_i in poly_e and not p_j in poly_e:
+              poly_1_p = poly_e[0] if poly_e[0] != p_i else poly_e[1]
+          for poly_e in poly_2.get_edges():
+            if p_i in poly_e and not p_j in poly_e:
+              poly_2_p = poly_e[0] if poly_e[0] != p_i else poly_e[1]
+          # Treat quadrilateral (i,k,l,j) as two triangles, get angle_ikj not angle_ikl
+          e_i1 = poly_1_p.position() - p_i.position()
+          e_1j = p_j.position() - poly_1_p.position()
+          e_i2 = poly_2_p.position() - p_i.position()
+          e_2j = p_j.position() - poly_2_p.position()
+          angle_1 = math.radians(e_i1.angleTo(e_1j))
+          angle_2 = math.radians(e_i2.angleTo(e_2j))
+          cot_angle_1 = math.cos(angle_1) / math.sin(angle_1)
+          cot_angle_2 = math.cos(angle_2) / math.sin(angle_2)
+          laplace_beltrami[ref_i, ref_j] = cot_angle_1 + cot_angle_2
       laplace_beltrami[ref_i, ref_i] = sum(laplace_beltrami[ref_i])
+    print(laplace_beltrami)
 
   else:
     '''
