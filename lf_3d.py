@@ -167,6 +167,7 @@ for i in range(1, len(boundaries)):
               for hole boundary edges
     '''
     points_neighbors = defaultdict(list)
+    exterior_points = []
     exterior_edges_neighbors = defaultdict(list)
     for edges_neighbor in list(set(edges_neighbors) - set(edges)):
       p_1, p_2 = edges_neighbor.points()
@@ -178,11 +179,15 @@ for i in range(1, len(boundaries)):
       for prim in edges_neighbor.prims():
         if prim.type() == hou.primType.Polygon:
           exterior_edges_neighbors[unord_hash(p_1.number(), p_2.number())].append(VirtualPolygon(prim.points()))
+      exterior_points.append(p_1) if p_1 not in exterior_points else exterior_points
+      exterior_points.append(p_2) if p_2 not in exterior_points else exterior_points
     
     exterior_edges_hashed = []
     for edge in edges:
       p_1, p_2 = edge.points()
       exterior_edges_hashed.append(unord_hash(p_1.number(), p_2.number()))
+      exterior_points.append(p_1) if p_1 not in exterior_points else exterior_points
+      exterior_points.append(p_2) if p_2 not in exterior_points else exterior_points
     interior_edges_neighbors = defaultdict(list)
     for min_poly in min_polys:
       for p_1, p_2 in min_poly.get_edges():
@@ -308,36 +313,49 @@ for i in range(1, len(boundaries)):
       where for two polygons (p_i, p_j, p_k), (p_i, p_j, p_m) adjacent to interior edge eij,
         alpha = angle_ikj
         beta = angle_imj
+
+    Then, solve for Laplace Beltrami
     '''
+    for edge in edges:
+      p_1, p_2 = edge.points()
+      for prim in edge.prims():
+        if prim.type() == hou.primType.Polygon:
+          exterior_edges_neighbors[unord_hash(p_1.number(), p_2.number())].append(VirtualPolygon(prim.points()))
+
     hole_edges_neighbors = {}
     hole_edges_neighbors.update(interior_edges_neighbors)
     hole_edges_neighbors.update(exterior_edges_neighbors)
     laplace_beltrami = np.zeros((len(points_neighbors), len(points_neighbors)))
+    laplace_vs = np.zeros((len(points_neighbors), 3))
     ref_keys = list(points_neighbors.keys())
     for p_i in points_neighbors:
       ref_i = ref_keys.index(p_i)
-      for p_j in points_neighbors[p_i]:
-        ref_j = ref_keys.index(p_j)
-        if unord_hash(p_i.number(), p_j.number()) in hole_edges_neighbors:
-          poly_1, poly_2 = hole_edges_neighbors[unord_hash(p_i.number(), p_j.number())]
-          poly_1_p, poly_2_p = None, None
-          for poly_e in poly_1.get_edges():
-            if p_i in poly_e and not p_j in poly_e:
-              poly_1_p = poly_e[0] if poly_e[0] != p_i else poly_e[1]
-          for poly_e in poly_2.get_edges():
-            if p_i in poly_e and not p_j in poly_e:
-              poly_2_p = poly_e[0] if poly_e[0] != p_i else poly_e[1]
-          # Treat quadrilateral (i,k,l,j) as two triangles, get angle_ikj not angle_ikl
-          e_i1 = poly_1_p.position() - p_i.position()
-          e_1j = p_j.position() - poly_1_p.position()
-          e_i2 = poly_2_p.position() - p_i.position()
-          e_2j = p_j.position() - poly_2_p.position()
-          angle_1 = math.radians(e_i1.angleTo(e_1j))
-          angle_2 = math.radians(e_i2.angleTo(e_2j))
-          cot_angle_1 = math.cos(angle_1) / math.sin(angle_1)
-          cot_angle_2 = math.cos(angle_2) / math.sin(angle_2)
-          laplace_beltrami[ref_i, ref_j] = cot_angle_1 + cot_angle_2
-      laplace_beltrami[ref_i, ref_i] = sum(laplace_beltrami[ref_i])
+      if p_i in exterior_points: # Known Solution
+        laplace_beltrami[ref_i, ref_i] = 1
+        laplace_vs[ref_i] = p_i.position()
+      else: # Unknown We Solve for
+        for p_j in points_neighbors[p_i]:
+          ref_j = ref_keys.index(p_j)
+          if unord_hash(p_i.number(), p_j.number()) in hole_edges_neighbors:
+            poly_1, poly_2 = hole_edges_neighbors[unord_hash(p_i.number(), p_j.number())]
+            poly_1_p, poly_2_p = None, None
+            for poly_e in poly_1.get_edges():
+              if p_i in poly_e and not p_j in poly_e:
+                poly_1_p = poly_e[0] if poly_e[0] != p_i else poly_e[1]
+            for poly_e in poly_2.get_edges():
+              if p_i in poly_e and not p_j in poly_e:
+                poly_2_p = poly_e[0] if poly_e[0] != p_i else poly_e[1]
+            # Treat quadrilateral (i,k,l,j) as two triangles, get angle_ikj not angle_ikl
+            e_i1 = poly_1_p.position() - p_i.position()
+            e_1j = p_j.position() - poly_1_p.position()
+            e_i2 = poly_2_p.position() - p_i.position()
+            e_2j = p_j.position() - poly_2_p.position()
+            angle_1 = math.radians(e_i1.angleTo(e_1j))
+            angle_2 = math.radians(e_i2.angleTo(e_2j))
+            cot_angle_1 = math.cos(angle_1) / math.sin(angle_1)
+            cot_angle_2 = math.cos(angle_2) / math.sin(angle_2)
+            laplace_beltrami[ref_i, ref_j] = cot_angle_1 + cot_angle_2
+        laplace_beltrami[ref_i, ref_i] = sum(laplace_beltrami[ref_i])
     print(laplace_beltrami)
 
   else:
