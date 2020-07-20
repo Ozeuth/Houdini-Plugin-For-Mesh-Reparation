@@ -23,6 +23,23 @@ def unord_hash(a, b):
   else:
     return a * b + math.trunc(math.pow(abs(a - b) - 1, 2)/ 4)
 
+def lss(A, b):
+  num_vars = A.shape[1]
+  rank = np.linalg.matrix_rank(A)
+  if rank == num_vars:
+    sol = np.linalg.lstsq(A, b)[0]
+    return (sol, True)
+  else:
+    sols = []
+    for nz in combinations(range(num_vars), rank):
+      try:
+        sol = np.zeros((num_vars, 1))
+        sol[nz, :] = np.asarray(np.linalg.solve(A[:, nz], b))
+        sols.append(sol)
+      except np.linalg.LinAlgError:
+        pass
+    return (sols, False)
+
 # NOTE: points ordered, but ordering breaks after deletion.
 #       Min triangulation relies on ordering
 for i in range(1, len(boundaries)):
@@ -186,8 +203,7 @@ for i in range(1, len(boundaries)):
     for edge in edges:
       p_1, p_2 = edge.points()
       exterior_edges_hashed.append(unord_hash(p_1.number(), p_2.number()))
-      exterior_points.append(p_1) if p_1 not in exterior_points else exterior_points
-      exterior_points.append(p_2) if p_2 not in exterior_points else exterior_points
+
     interior_edges_neighbors = defaultdict(list)
     for min_poly in min_polys:
       for p_1, p_2 in min_poly.get_edges():
@@ -216,7 +232,7 @@ for i in range(1, len(boundaries)):
           t_neighbors = points_neighbors[t]
           for t_neighbor in t_neighbors:
             t_scale += e_lens_hashed[unord_hash(t.number(), t_neighbor.number())]
-          if math.sqrt(12) * (center - t.position()).length() <= min(t_scale, c_scale):
+          if math.sqrt(14) * (center - t.position()).length() <= min(t_scale, c_scale):
             split = False
         c_normal /= 3
 
@@ -351,27 +367,23 @@ for i in range(1, len(boundaries)):
             e_i2 = poly_2_p.position() - p_i.position()
             e_2j = p_j.position() - poly_2_p.position()
             angle_1 = math.radians(e_i1.angleTo(e_1j))
-            angle_2 = math.radians(e_i2.angleTo(e_2j)) 
+            angle_2 = math.radians(e_i2.angleTo(e_2j))
             cot_angle_1 = math.cos(angle_1) / math.sin(angle_1)
             cot_angle_2 = math.cos(angle_2) / math.sin(angle_2)
-            laplace_beltrami[ref_i, ref_j] = cot_angle_1 + cot_angle_2
+            laplace_beltrami[ref_i, ref_j] = (cot_angle_1 + cot_angle_2)
         laplace_beltrami[ref_i, ref_i] = sum(laplace_beltrami[ref_i])
-    np.set_printoptions(threshold=np.inf)
-    print(laplace_beltrami)
 
-    A = np.matrix(laplace_beltrami)
     laplace_fs = np.zeros((len(points_neighbors), 3))
     for dim in range(laplace_vs.shape[1]):
-      b = np.matrix(laplace_vs[:, dim]).T
-      fit = (A.T * A).T * A.T * b
-      laplace_fs[:, [dim]] = fit
-    print(laplace_fs)
+      sol, is_singular = lss(laplace_beltrami, np.transpose(laplace_vs[:, dim]))
+      if is_singular:
+        laplace_fs[:, dim] = sol
+    
     for p in points_neighbors:
       ref = ref_keys.index(p)
+      p.setPosition(laplace_fs[ref])
       if p not in exterior_points:
-        p.setPosition(laplace_fs[ref])
-      else:
-        print(p.position())
+        p.setPosition(-1 * laplace_fs[ref])
 
   else:
     '''
