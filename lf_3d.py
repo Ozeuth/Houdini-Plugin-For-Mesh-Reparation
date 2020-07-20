@@ -232,7 +232,7 @@ for i in range(1, len(boundaries)):
           t_neighbors = points_neighbors[t]
           for t_neighbor in t_neighbors:
             t_scale += e_lens_hashed[unord_hash(t.number(), t_neighbor.number())]
-          if math.sqrt(14) * (center - t.position()).length() <= min(t_scale, c_scale):
+          if math.sqrt(16) * (center - t.position()).length() <= min(t_scale, c_scale):
             split = False
         c_normal /= 3
 
@@ -371,7 +371,7 @@ for i in range(1, len(boundaries)):
             cot_angle_1 = math.cos(angle_1) / math.sin(angle_1)
             cot_angle_2 = math.cos(angle_2) / math.sin(angle_2)
             laplace_beltrami[ref_i, ref_j] = (cot_angle_1 + cot_angle_2)
-        laplace_beltrami[ref_i, ref_i] = sum(laplace_beltrami[ref_i])
+        laplace_beltrami[ref_i, ref_i] = -1 * sum(laplace_beltrami[ref_i])
 
     laplace_fs = np.zeros((len(points_neighbors), 3))
     for dim in range(laplace_vs.shape[1]):
@@ -383,7 +383,7 @@ for i in range(1, len(boundaries)):
       ref = ref_keys.index(p)
       p.setPosition(laplace_fs[ref])
       if p not in exterior_points:
-        p.setPosition(-1 * laplace_fs[ref])
+        p.setPosition(laplace_fs[ref])
 
   else:
     '''
