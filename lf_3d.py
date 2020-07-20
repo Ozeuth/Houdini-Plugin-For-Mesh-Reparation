@@ -216,7 +216,7 @@ for i in range(1, len(boundaries)):
           t_neighbors = points_neighbors[t]
           for t_neighbor in t_neighbors:
             t_scale += e_lens_hashed[unord_hash(t.number(), t_neighbor.number())]
-          if math.sqrt(2) * (center - t.position()).length() <= min(t_scale, c_scale):
+          if math.sqrt(12) * (center - t.position()).length() <= min(t_scale, c_scale):
             split = False
         c_normal /= 3
 
@@ -261,11 +261,11 @@ for i in range(1, len(boundaries)):
       poly_1_v_1 = hou.Vector3(1, 1, -1 * (poly_1_e_1[0] + poly_1_e_1[1]) / poly_1_e_1[2])
       poly_1_v_2 = hou.Vector3(1, 1, -1 * (poly_1_e_2[0] + poly_1_e_2[1]) / poly_1_e_2[2])
 
-      poly_1_alpha = (poly_1_c_2[2] - poly_1_c_1[2] + (poly_1_c_1[1] - poly_1_c_2[1]) * poly_1_v_2[2]
-              / (poly_1_v_1[2] - poly_1_v_2[2]))
+      poly_1_alpha = ((poly_1_c_2[1] - poly_1_c_1[1] + (poly_1_c_1[2] - poly_1_c_2[2]) / poly_1_v_2[2]) 
+                / (1 - (poly_1_v_1[2] / poly_1_v_2[2])))
       poly_1_circumsphere_c = poly_1_c_1 + poly_1_alpha * poly_1_v_1
       poly_1_circumsphere_r = (poly_1_circumsphere_c - poly_1_p.position()).length()
-      
+
       if (poly_1_circumsphere_c - poly_2_p.position()).length() < poly_1_circumsphere_r:
         new_poly_1 = VirtualPolygon([poly_1_p, common_edge[0], poly_2_p])
         new_poly_2 = VirtualPolygon([poly_1_p, common_edge[1], poly_2_p])
@@ -287,7 +287,7 @@ for i in range(1, len(boundaries)):
             update = interior_edges_neighbors if (e in interior_edges_neighbors and not e in marked_for_deletion) else marked_for_update
             update[e].remove(old_ps[e_i])
             update[e].append(new_ps[e_i])
-        
+
         points_neighbors[common_edge[0]].remove(common_edge[1])
         points_neighbors[common_edge[1]].remove(common_edge[0])
         points_neighbors[poly_1_p].append(poly_2_p)
@@ -351,12 +351,27 @@ for i in range(1, len(boundaries)):
             e_i2 = poly_2_p.position() - p_i.position()
             e_2j = p_j.position() - poly_2_p.position()
             angle_1 = math.radians(e_i1.angleTo(e_1j))
-            angle_2 = math.radians(e_i2.angleTo(e_2j))
+            angle_2 = math.radians(e_i2.angleTo(e_2j)) 
             cot_angle_1 = math.cos(angle_1) / math.sin(angle_1)
             cot_angle_2 = math.cos(angle_2) / math.sin(angle_2)
             laplace_beltrami[ref_i, ref_j] = cot_angle_1 + cot_angle_2
         laplace_beltrami[ref_i, ref_i] = sum(laplace_beltrami[ref_i])
+    np.set_printoptions(threshold=np.inf)
     print(laplace_beltrami)
+
+    A = np.matrix(laplace_beltrami)
+    laplace_fs = np.zeros((len(points_neighbors), 3))
+    for dim in range(laplace_vs.shape[1]):
+      b = np.matrix(laplace_vs[:, dim]).T
+      fit = (A.T * A).T * A.T * b
+      laplace_fs[:, [dim]] = fit
+    print(laplace_fs)
+    for p in points_neighbors:
+      ref = ref_keys.index(p)
+      if p not in exterior_points:
+        p.setPosition(laplace_fs[ref])
+      else:
+        print(p.position())
 
   else:
     '''
