@@ -232,7 +232,7 @@ for i in range(1, len(boundaries)):
           t_neighbors = points_neighbors[t]
           for t_neighbor in t_neighbors:
             t_scale += e_lens_hashed[unord_hash(t.number(), t_neighbor.number())]
-          if math.sqrt(16) * (center - t.position()).length() <= min(t_scale, c_scale):
+          if math.sqrt(19) * (center - t.position()).length() <= min(t_scale, c_scale):
             split = False
         c_normal /= 3
 
@@ -261,26 +261,33 @@ for i in range(1, len(boundaries)):
       is_locally_delaunay(ts) = | 0 otherwise
       if two polygons are not locally delaunay, swap edges. Replace eij with ekm.
     '''
+    def find_circle(pA, pB, pC):
+      # Find center in 2D (u, v) space, then project back to 3D space
+      A = pA.position()
+      B = pB.position()
+      C = pC.position()
+      u1 = B - A
+      w1 = (C - A).cross(u1)
+      u = u1 / u1.length()
+      w = w1 / w1.length()
+      v = w.cross(u)
+
+      b = (u1.dot(u) , 0)
+      c = ((C - A).dot(u), (C - A).dot(v))
+      h = (math.pow((c[0]-b[0])/2, 2) + math.pow(c[1], 2) - math.pow(b[0]/2, 2)) / (2 * c[1])
+      center = A + (b[0] / 2) * u + h * v
+      radius = max((A - center).length(), max((C - center).length(), (C - center).length()))
+      return center, radius
+
     marked_for_update = {}
     marked_for_deletion = []
-
     for interior_edge in interior_edges_neighbors:
       poly_1, poly_2 = interior_edges_neighbors[interior_edge]
       common_edge = poly_1.get_common_edge(poly_2)
       poly_1_p = list(set(poly_1.ps) - set(common_edge))[0]
       poly_2_p = list(set(poly_2.ps) - set(common_edge))[0]
-      
-      poly_1_c_1 = (common_edge[0].position() + poly_1_p.position()) / 2
-      poly_1_c_2 = (common_edge[1].position() + poly_1_p.position()) / 2
-      poly_1_e_1 = common_edge[0].position() - poly_1_p.position()
-      poly_1_e_2 = common_edge[1].position() - poly_1_p.position()
-      poly_1_v_1 = hou.Vector3(1, 1, -1 * (poly_1_e_1[0] + poly_1_e_1[1]) / poly_1_e_1[2])
-      poly_1_v_2 = hou.Vector3(1, 1, -1 * (poly_1_e_2[0] + poly_1_e_2[1]) / poly_1_e_2[2])
 
-      poly_1_alpha = ((poly_1_c_2[1] - poly_1_c_1[1] + (poly_1_c_1[2] - poly_1_c_2[2]) / poly_1_v_2[2]) 
-                / (1 - (poly_1_v_1[2] / poly_1_v_2[2])))
-      poly_1_circumsphere_c = poly_1_c_1 + poly_1_alpha * poly_1_v_1
-      poly_1_circumsphere_r = (poly_1_circumsphere_c - poly_1_p.position()).length()
+      poly_1_circumsphere_c, poly_1_circumsphere_r = find_circle(common_edge[0], poly_1_p, common_edge[1])
 
       if (poly_1_circumsphere_c - poly_2_p.position()).length() < poly_1_circumsphere_r:
         new_poly_1 = VirtualPolygon([poly_1_p, common_edge[0], poly_2_p])
@@ -324,13 +331,22 @@ for i in range(1, len(boundaries)):
     pj | Wji Lj  Wjk |
     pk | Wki Wkj Lk  |
     where
-      Li = Wij + Wik + ...
-      Wij = 0.5*(cot(alpha) + cot(beta))
+      Li = | Wij + Wik + ... if pi is a generated point
+           | 1               otherwise
+            | 0.5*(cot(alpha) + cot(beta)) if eij
+      Wij = | 0                            otherwise
       where for two polygons (p_i, p_j, p_k), (p_i, p_j, p_m) adjacent to interior edge eij,
         alpha = angle_ikj
         beta = angle_imj
 
-    Then, solve for Laplace Beltrami
+    Then solve f, f = [f0, f1, f2]
+    M *    fd    =    vd
+    M * | fd_i | = | vd_i |
+        | fd_j |   | vd_j |
+        | fd_k |   | vd_k |
+    where
+             | pi_pos[d]  if pi is not a generated point
+      vd_i = | 0          otherwise
     '''
     for edge in edges:
       p_1, p_2 = edge.points()
@@ -384,7 +400,6 @@ for i in range(1, len(boundaries)):
       p.setPosition(laplace_fs[ref])
       if p not in exterior_points:
         p.setPosition(laplace_fs[ref])
-
   else:
     '''
     4. Fill large hole with advancing front method
