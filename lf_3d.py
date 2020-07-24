@@ -31,7 +31,7 @@ def lss(A, b):
     return (sol, True)
   else:
     sols = []
-    for nz in combinations(range(num_vars), rank):
+    for nz in itertools.combinations(range(num_vars), rank):
       try:
         sol = np.zeros((num_vars, 1))
         sol[nz, :] = np.asarray(np.linalg.solve(A[:, nz], b))
@@ -39,6 +39,12 @@ def lss(A, b):
       except np.linalg.LinAlgError:
         pass
     return (sols, False)
+
+def get_poly(geo, ps):
+  new_poly = geo.createPolygon()
+  for p in ps:
+    new_poly.addVertex(p)
+  return new_poly
 
 # NOTE: points ordered, but ordering breaks after deletion.
 #       Min triangulation relies on ordering
@@ -64,11 +70,8 @@ for i in range(1, len(boundaries)):
     centroid.setPosition(center)
     centroid.setAttribValue("N", normal)
     for edge in edges:
-      new_poly = geo.createPolygon()
-      new_poly.addVertex(centroid)
-      edge_points = edge.points()
-      for edge_point in edge_points:
-        new_poly.addVertex(edge_point)
+      ps = list(edge.points()) + [centroid]
+      get_poly(geo, ps)
   elif len(points) <= 12:
     '''
     3. Fill Medium hole with projection-based method
@@ -232,7 +235,7 @@ for i in range(1, len(boundaries)):
           t_neighbors = points_neighbors[t]
           for t_neighbor in t_neighbors:
             t_scale += e_lens_hashed[unord_hash(t.number(), t_neighbor.number())]
-          if math.sqrt(19) * (center - t.position()).length() <= min(t_scale, c_scale):
+          if math.sqrt(2) * (center - t.position()).length() <= min(t_scale, c_scale):
             split = False
         c_normal /= 3
 
@@ -278,7 +281,6 @@ for i in range(1, len(boundaries)):
       center = A + (b[0] / 2) * u + h * v
       radius = max((A - center).length(), max((C - center).length(), (C - center).length()))
       return center, radius
-
     marked_for_update = {}
     marked_for_deletion = []
     for interior_edge in interior_edges_neighbors:
@@ -320,9 +322,7 @@ for i in range(1, len(boundaries)):
     interior_edges_neighbors.update(marked_for_update)
 
     for min_poly in new_min_polys:
-      new_poly = geo.createPolygon()
-      for p in min_poly.ps:
-        new_poly.addVertex(p)
+      get_poly(geo, min_poly.ps)
     '''
     3D. Conduct Patch Fairing.
     Compute the Laplace Beltrami Matrix,
@@ -347,7 +347,7 @@ for i in range(1, len(boundaries)):
     where
              | pi_pos[d]  if pi is not a generated point
       vd_i = | 0          otherwise
-    '''
+    '''    
     for edge in edges:
       p_1, p_2 = edge.points()
       for prim in edge.prims():
@@ -404,6 +404,55 @@ for i in range(1, len(boundaries)):
     '''
     4. Fill large hole with advancing front method
     '''
-    continue
-  
+    def get_angle(p, points_neighbors):
+      p_1, p_2 = points_neighbors[p]
+      return (p_1 - p).angleTo(p_2 - p)
+
+    points_neighbors = defaultdict(list)
+    for edge in edges:
+      p_1, p_2 = edge.points()
+      points_neighbors[p_1].append(p_2)
+      points_neighbors[p_2].append(p_1)
+    points_angle = defaultdict(list)
+    for p in points_neighbors:
+      points_angle[p] = get_angle(p, points_neighbors)
+
+    while points_neighbors >= 3:
+      p = min(points_angle, key=points_angle.get)
+      p_1, p_2 = points_neighbors[p]
+      min_angle = points_neighbors[p]
+
+      points_neighbors[p_1].remove(p)
+      points_neighbors[p_2].remove(p)
+      if min_angle <= 75:
+        ps = [p, p_1, p_2]
+        get_poly(geo, ps)
+        points_neighbors[p_1].append(p_2)
+        points_neighbors[p_2].append(p_1)
+      elif min_angle <= 135:
+        new_point = geo.createPoint()
+        ps_1, ps_2 = [p, p_1, new_point], [p, p_2, new_point]
+        get_poly(geo, ps_1)
+        get_poly(geo, ps_2)
+        points_neighbors[p_1].append(new_point)
+        points_neighbors[p_2].append(new_point)
+        points_neighbors[new_point] = [p_1, p_2]
+        points_angle[new_point] = get_angle(new_point, points_neighbors)
+      else:
+        new_point_1, new_point_2 = geo.createPoint(), geo.createPoint()
+        ps_1, ps_2, ps_3 = [p, p_1, new_point_1], [p, new_point_1, new_point_2], [p, p_2, new_point_2]
+        get_poly(geo, ps_1)
+        get_poly(geo, ps_2)
+        get_poly(geo, ps_3)
+        points_neighbors[p_1].append(new_point_1)
+        points_neighbors[p_2].append(new_point_2)
+        points_neighbors[new_point_1] = [p_1, new_point_2]
+        points_neighbors[new_point_2] = [new_point_1, p_2]
+        points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
+        points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
+      points_angle[p_1] = get_angle(p_1, points_neighbors)
+      points_angle[p_2] = get_angle(p_2, points_neighbors)
+      del points_neighbors[p]
+    get_poly(geo, points_neighbors.keys())
+
 node.bypass(True)
