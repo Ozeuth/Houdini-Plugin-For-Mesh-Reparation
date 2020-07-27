@@ -72,7 +72,7 @@ for i in range(1, len(boundaries)):
     for edge in edges:
       ps = list(edge.points()) + [centroid]
       get_poly(geo, ps)
-  elif len(points) <= 12:
+  elif len(points) <= 14:
     '''
     3. Fill Medium hole with projection-based method
     3A. Initialize with minimum area triangulation
@@ -406,8 +406,27 @@ for i in range(1, len(boundaries)):
     '''
     def get_angle(p, points_neighbors):
       p_1, p_2 = points_neighbors[p]
-      return (p_1 - p).angleTo(p_2 - p)
-
+      e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
+      #print(str((e1, e2)) + " angle: " + str(e1.angleTo(e2)))
+      return (e1.angleTo(e2))
+    
+    def get_Nsectors(p, points_neighbors, n):
+      # n:2 = point of bisector, n:3 = points of trisector, etc
+      p_1, p_2 = points_neighbors[p]
+      e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
+      average_length = (e1.length() + e2.length()) / 2
+      new_points = []
+      for i in range(1, n):
+        new_point = geo.createPoint()
+        proportion_1 = (1 - i/float(n))
+        proportion_2 = (i/float(n))
+        unit_dir = (proportion_1 * e1 + proportion_2 * e2) / (proportion_1 * e1 + proportion_2 * e2).length()
+        new_point.setPosition(p.position() + average_length * unit_dir)
+        normal = (proportion_1 * hou.Vector3(p_1.attribValue("N")) + proportion_2 * hou.Vector3(p_2.attribValue("N")))
+        new_point.setAttribValue("N", normal)
+        new_points.append(new_point)
+      return new_points
+       
     points_neighbors = defaultdict(list)
     for edge in edges:
       p_1, p_2 = edge.points()
@@ -417,7 +436,11 @@ for i in range(1, len(boundaries)):
     for p in points_neighbors:
       points_angle[p] = get_angle(p, points_neighbors)
 
-    while points_neighbors >= 3:
+    i = 0
+    while len(points_neighbors) >= 3:
+      i += 1
+      if i == 3:
+        break
       p = min(points_angle, key=points_angle.get)
       p_1, p_2 = points_neighbors[p]
       min_angle = points_neighbors[p]
@@ -425,12 +448,14 @@ for i in range(1, len(boundaries)):
       points_neighbors[p_1].remove(p)
       points_neighbors[p_2].remove(p)
       if min_angle <= 75:
+        print("small")
         ps = [p, p_1, p_2]
         get_poly(geo, ps)
         points_neighbors[p_1].append(p_2)
         points_neighbors[p_2].append(p_1)
       elif min_angle <= 135:
-        new_point = geo.createPoint()
+        print("med")
+        new_point = get_Nsectors(p, points_neighbors, 2)[0]
         ps_1, ps_2 = [p, p_1, new_point], [p, p_2, new_point]
         get_poly(geo, ps_1)
         get_poly(geo, ps_2)
@@ -439,7 +464,10 @@ for i in range(1, len(boundaries)):
         points_neighbors[new_point] = [p_1, p_2]
         points_angle[new_point] = get_angle(new_point, points_neighbors)
       else:
-        new_point_1, new_point_2 = geo.createPoint(), geo.createPoint()
+        print("big")
+        new_points = get_Nsectors(p, points_neighbors, 3)
+        new_point_1 = new_points[0]
+        new_point_2 = new_points[1]
         ps_1, ps_2, ps_3 = [p, p_1, new_point_1], [p, new_point_1, new_point_2], [p, p_2, new_point_2]
         get_poly(geo, ps_1)
         get_poly(geo, ps_2)
@@ -452,7 +480,8 @@ for i in range(1, len(boundaries)):
         points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
       points_angle[p_1] = get_angle(p_1, points_neighbors)
       points_angle[p_2] = get_angle(p_2, points_neighbors)
+      del points_angle[p]
       del points_neighbors[p]
-    get_poly(geo, points_neighbors.keys())
+    #get_poly(geo, points_neighbors.keys())
 
 node.bypass(True)
