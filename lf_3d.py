@@ -2,6 +2,7 @@ import hou
 import itertools
 import math
 import numpy as np
+import operator
 from collections import defaultdict
 
 node = hou.pwd()
@@ -122,8 +123,8 @@ for i in range(1, len(boundaries)):
         for p in self.ps:
           if p in other.ps:
             edge_points.append(p)
-        return edge_points
-        
+        return edge_points 
+
     class MinTriangulation():
       def __init__(self, geo, points, cache_costs=None):
         if cache_costs is None:
@@ -406,9 +407,17 @@ for i in range(1, len(boundaries)):
     '''
     def get_angle(p, points_neighbors):
       p_1, p_2 = points_neighbors[p]
+      centroid = np.zeros(3)
+      c = 0
+      for prim in p.prims():
+        if prim.type() == hou.primType.Polygon:
+          centroid += prim.positionAtInterior(0.5, 0.5)
+          c += 1
+      centroid /= c
+      e0 = hou.Vector3(centroid - p.position())
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
-      #print(str((e1, e2)) + " angle: " + str(e1.angleTo(e2)))
-      return (e1.angleTo(e2))
+      angle = (360 - e1.angleTo(e2)) if (e0.angleTo(e1) + e0.angleTo(e1) < 90 or e0.angleTo(e2) < 90) else e1.angleTo(e2)
+      return angle
     
     def get_Nsectors(p, points_neighbors, n):
       # n:2 = point of bisector, n:3 = points of trisector, etc
@@ -420,12 +429,15 @@ for i in range(1, len(boundaries)):
         new_point = geo.createPoint()
         proportion_1 = (1 - i/float(n))
         proportion_2 = (i/float(n))
-        print(str(proportion_1, proportion_2))
         unit_dir = (proportion_1 * e1 + proportion_2 * e2) / (proportion_1 * e1 + proportion_2 * e2).length()
         new_point.setPosition(p.position() + average_length * unit_dir)
         normal = (proportion_1 * hou.Vector3(p_1.attribValue("N")) + proportion_2 * hou.Vector3(p_2.attribValue("N")))
         new_point.setAttribValue("N", normal)
         new_points.append(new_point)
+      ns = []
+      for new_point in new_points:
+        ns.append(new_point.number())
+      print("Generated child for: " + str(p.number()) + str(ns))
       return new_points
        
     points_neighbors = defaultdict(list)
@@ -439,12 +451,24 @@ for i in range(1, len(boundaries)):
 
     i = 0
     while len(points_neighbors) >= 3:
-      i += 1
-      if i == 3:
-        break
       p = min(points_angle, key=points_angle.get)
       p_1, p_2 = points_neighbors[p]
-      min_angle = points_neighbors[p]
+      
+      ms = defaultdict(list)
+      for mangle in points_angle:
+        ms[mangle.number()] = points_angle[mangle]
+      ms = sorted(ms.items(), key=operator.itemgetter(1))
+      if i == 6:
+        print(ms)
+        for points_neighbor in points_neighbors:
+          if points_neighbor.number() == 45:
+            p_1, p_2 = points_neighbors[points_neighbor]
+            e1 = p_1.position() - points_neighbor.position()
+            e2 = p_2.position() - points_neighbor.position()
+            print(str(e1.angleTo(e2)) + "But now: " + str(get_angle(points_neighbor, points_neighbors)))
+        break
+      print("MIN " + str(min_angle) + " at " + str(p.number()))
+      min_angle = points_angle[p]
 
       points_neighbors[p_1].remove(p)
       points_neighbors[p_2].remove(p)
@@ -466,9 +490,7 @@ for i in range(1, len(boundaries)):
         points_angle[new_point] = get_angle(new_point, points_neighbors)
       else:
         print("big")
-        new_points = get_Nsectors(p, points_neighbors, 3)
-        new_point_1 = new_points[0]
-        new_point_2 = new_points[1]
+        new_point_1, new_point_2 = get_Nsectors(p, points_neighbors, 3)
         ps_1, ps_2, ps_3 = [p, p_1, new_point_1], [p, new_point_1, new_point_2], [p, p_2, new_point_2]
         get_poly(geo, ps_1)
         get_poly(geo, ps_2)
@@ -483,6 +505,7 @@ for i in range(1, len(boundaries)):
       points_angle[p_2] = get_angle(p_2, points_neighbors)
       del points_angle[p]
       del points_neighbors[p]
+      i += 1
     #get_poly(geo, points_neighbors.keys())
 
 node.bypass(True)
