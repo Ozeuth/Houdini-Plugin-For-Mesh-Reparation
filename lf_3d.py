@@ -420,6 +420,7 @@ for i in range(1, len(boundaries)):
         new_point = geo.createPoint()
         proportion_1 = (1 - i/float(n))
         proportion_2 = (i/float(n))
+        print(str(proportion_1, proportion_2))
         unit_dir = (proportion_1 * e1 + proportion_2 * e2) / (proportion_1 * e1 + proportion_2 * e2).length()
         new_point.setPosition(p.position() + average_length * unit_dir)
         normal = (proportion_1 * hou.Vector3(p_1.attribValue("N")) + proportion_2 * hou.Vector3(p_2.attribValue("N")))
