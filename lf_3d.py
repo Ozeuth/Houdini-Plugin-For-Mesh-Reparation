@@ -47,6 +47,45 @@ def get_poly(geo, ps):
     new_poly.addVertex(p)
   return new_poly
 
+class VirtualPolygon():
+  # class to avoid generation of Houdini Polygons during intermediary phases
+  # works for triangles and quads
+  def __init__(self, ps):
+    self.ps = ps
+    self.tri = (len(ps) == 3)
+
+  def __eq__(self, other):
+    same = True
+    for p in self.ps:
+      same = same and (p in other.ps)
+    return same
+
+  def __str__(self):
+    string = []
+    for p in self.ps:
+      string.append(str(p.number()))
+    string.sort()
+    return "<" + ', '.join(string) + ">"
+
+  def __repr__(self):
+    return str(self)
+
+  def get_edges(self):
+    combinations = list(itertools.combinations(self.ps, 2))
+    if self.tri:
+      return combinations
+    combinations_lengths = []
+    for combination in combinations:
+      combinations_lengths.append((combination[0].position() - combination[1].position()).length())
+    return [edge for _, edge in sorted(zip(combinations_lengths, combinations))][:-2]
+
+  def get_common_edge(self, other):
+    edge_points = []
+    for p in self.ps:
+      if p in other.ps:
+        edge_points.append(p)
+    return edge_points 
+
 # NOTE: points ordered, but ordering breaks after deletion.
 #       Min triangulation relies on ordering
 for i in range(1, len(boundaries)):
@@ -85,45 +124,6 @@ for i in range(1, len(boundaries)):
         pi_pos = p_i.position()
         pj_pos = p_j.position()
         e_lens_hashed[unord_hash(p_i.number(), p_j.number())] = (pi_pos - pj_pos).length()
-
-    class VirtualPolygon():
-      # class to avoid generation of Houdini Polygons during intermediary phases
-      # works for triangles and quads
-      def __init__(self, ps):
-        self.ps = ps
-        self.tri = (len(ps) == 3)
-
-      def __eq__(self, other):
-        same = True
-        for p in self.ps:
-          same = same and (p in other.ps)
-        return same
-
-      def __str__(self):
-        string = []
-        for p in self.ps:
-          string.append(str(p.number()))
-        string.sort()
-        return "<" + ', '.join(string) + ">"
-
-      def __repr__(self):
-        return str(self)
-
-      def get_edges(self):
-        combinations = list(itertools.combinations(self.ps, 2))
-        if self.tri:
-          return combinations
-        combinations_lengths = []
-        for combination in combinations:
-          combinations_lengths.append((combination[0].position() - combination[1].position()).length())
-        return [edge for _, edge in sorted(zip(combinations_lengths, combinations))][:-2]
-
-      def get_common_edge(self, other):
-        edge_points = []
-        for p in self.ps:
-          if p in other.ps:
-            edge_points.append(p)
-        return edge_points 
 
     class MinTriangulation():
       def __init__(self, geo, points, cache_costs=None):
@@ -282,6 +282,7 @@ for i in range(1, len(boundaries)):
       center = A + (b[0] / 2) * u + h * v
       radius = max((A - center).length(), max((C - center).length(), (C - center).length()))
       return center, radius
+
     marked_for_update = {}
     marked_for_deletion = []
     for interior_edge in interior_edges_neighbors:
@@ -409,14 +410,39 @@ for i in range(1, len(boundaries)):
       p_1, p_2 = points_neighbors[p]
       centroid = np.zeros(3)
       c = 0
+      vs = []
       for prim in p.prims():
         if prim.type() == hou.primType.Polygon:
-          centroid += prim.positionAtInterior(0.5, 0.5)
+          c += 1
+          vs.append(VirtualPolygon(prim.points()))
+      c = 0
+      for v1, v2 in list(itertools.combinations(vs, 2)):
+        common_edge = v1.get_common_edge(v2)
+        if len(common_edge) == 2:
+          centroid += 0.5 * (common_edge[0].position() + common_edge[1].position())
           c += 1
       centroid /= c
-      e0 = hou.Vector3(centroid - p.position())
-      e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
-      angle = (360 - e1.angleTo(e2)) if (e0.angleTo(e1) + e0.angleTo(e1) < 90 or e0.angleTo(e2) < 90) else e1.angleTo(e2)
+
+      e0, e1, e2 = hou.Vector3(centroid - p.position()), p_1.position() - p.position(), p_2.position() - p.position()
+      u = e1 / e1.length()
+      w = (e2).cross(e1) / ((e2).cross(e1)).length()
+      v = w.cross(u)
+
+      uv_1 = (e1.dot(u), 0) # p_1 position in uv space
+      uv_2 = (e2.dot(u), e2.dot(v)) # p_2 position in uv space
+      p_proj = hou.Vector3(centroid) - (w.dot(e0)) * w
+      e_proj = p.position() - p_proj
+      uv_proj = (e_proj.dot(u), e_proj.dot(v)) # p^0 position in uv space, p^0 = closest point to centroid on plane
+      
+      uv_1_len = math.sqrt(math.pow(uv_1[0], 2) + math.pow(uv_1[1], 2))
+      uv_2_len = math.sqrt(math.pow(uv_2[0], 2) + math.pow(uv_2[1], 2))
+      uv_proj_len = math.sqrt(math.pow(uv_proj[0], 2) + math.pow(uv_proj[1], 2))
+
+      theta_1 = math.degrees(math.acos((uv_1[0] * uv_proj[0]) /(uv_1_len + uv_proj_len)))
+      theta_2 = math.degrees(math.acos((uv_2[0] * uv_proj[0] + uv_2[1] * uv_proj[1]) /(uv_2_len + uv_proj_len)))
+      #print("P: " + str(p.number()) + ": " + str(uv_1) + " " + str(uv_2) + " " + str(uv_proj) + " " + str((theta_1, theta_2)))
+
+      angle = (360 - e1.angleTo(e2)) if (theta_1 + theta_2 > 180) else e1.angleTo(e2)
       return angle
     
     def get_Nsectors(p, points_neighbors, n):
@@ -453,33 +479,33 @@ for i in range(1, len(boundaries)):
     while len(points_neighbors) >= 3:
       p = min(points_angle, key=points_angle.get)
       p_1, p_2 = points_neighbors[p]
-      
-      ms = defaultdict(list)
-      for mangle in points_angle:
-        ms[mangle.number()] = points_angle[mangle]
-      ms = sorted(ms.items(), key=operator.itemgetter(1))
-      if i == 6:
+    
+      if i ==40:
+        ms = defaultdict(list)
+        for mangle in points_angle:
+          ms[mangle.number()] = points_angle[mangle]
+        ms = sorted(ms.items(), key=operator.itemgetter(1))        
         print(ms)
         for points_neighbor in points_neighbors:
-          if points_neighbor.number() == 45:
+          if points_neighbor.number() == 504:
+            for prim in p.prims():
+              if prim.type() == hou.primType.Polygon:
+                print(prim.positionAtInterior(0.5, 0.5))
             p_1, p_2 = points_neighbors[points_neighbor]
             e1 = p_1.position() - points_neighbor.position()
             e2 = p_2.position() - points_neighbor.position()
             print(str(e1.angleTo(e2)) + "But now: " + str(get_angle(points_neighbor, points_neighbors)))
         break
-      print("MIN " + str(min_angle) + " at " + str(p.number()))
       min_angle = points_angle[p]
 
       points_neighbors[p_1].remove(p)
       points_neighbors[p_2].remove(p)
       if min_angle <= 75:
-        print("small")
         ps = [p, p_1, p_2]
         get_poly(geo, ps)
         points_neighbors[p_1].append(p_2)
         points_neighbors[p_2].append(p_1)
       elif min_angle <= 135:
-        print("med")
         new_point = get_Nsectors(p, points_neighbors, 2)[0]
         ps_1, ps_2 = [p, p_1, new_point], [p, p_2, new_point]
         get_poly(geo, ps_1)
@@ -489,7 +515,6 @@ for i in range(1, len(boundaries)):
         points_neighbors[new_point] = [p_1, p_2]
         points_angle[new_point] = get_angle(new_point, points_neighbors)
       else:
-        print("big")
         new_point_1, new_point_2 = get_Nsectors(p, points_neighbors, 3)
         ps_1, ps_2, ps_3 = [p, p_1, new_point_1], [p, new_point_1, new_point_2], [p, p_2, new_point_2]
         get_poly(geo, ps_1)
