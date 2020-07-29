@@ -434,21 +434,17 @@ for i in range(1, len(boundaries)):
       # n:2 = point of bisector, n:3 = points of trisector, etc
       p_1, p_2 = points_neighbors[p]
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
-      average_length = (e1.length() + e2.length()) / 2
+      average_length = (e1.length() + e2.length()) # NOTE: Not true average length
+      v1, v2 = e1 / e1.length(), e2 / e2.length()
       new_points = []
       for i in range(1, n):
         new_point = geo.createPoint()
-        proportion_1 = (1 - i/float(n))
-        proportion_2 = (i/float(n))
-        unit_dir = (proportion_1 * e1 + proportion_2 * e2) / (proportion_1 * e1 + proportion_2 * e2).length()
+        proportion_1, proportion_2 = (1 - i/float(n)), (i/float(n))
+        unit_dir = (proportion_1 * v1 + proportion_2 * v2)
         new_point.setPosition(p.position() + average_length * unit_dir)
         normal = (proportion_1 * hou.Vector3(p_1.attribValue("N")) + proportion_2 * hou.Vector3(p_2.attribValue("N")))
         new_point.setAttribValue("N", normal)
         new_points.append(new_point)
-      ns = []
-      for new_point in new_points:
-        ns.append(new_point.number())
-      #print("Generated child for: " + str(p.number()) + str(ns))
       return new_points
        
     points_neighbors = defaultdict(list)
@@ -464,23 +460,7 @@ for i in range(1, len(boundaries)):
     while len(points_neighbors) >= 3:
       p = min(points_angle, key=points_angle.get)
       p_1, p_2 = points_neighbors[p]
-      
-      if i ==100:
-        ms = defaultdict(list)
-        for mangle in points_angle:
-          ms[mangle.number()] = points_angle[mangle]
-        ms = sorted(ms.items(), key=operator.itemgetter(1))        
-        print(ms)
-        for points_neighbor in points_neighbors:
-          if points_neighbor.number() == 504:
-            for prim in p.prims():
-              if prim.type() == hou.primType.Polygon:
-                print(prim.positionAtInterior(0.5, 0.5))
-            p_1, p_2 = points_neighbors[points_neighbor]
-            e1 = p_1.position() - points_neighbor.position()
-            e2 = p_2.position() - points_neighbor.position()
-            print(str(e1.angleTo(e2)) + "But now: " + str(get_angle(points_neighbor, points_neighbors)))
-        break
+
       min_angle = points_angle[p]
 
       points_neighbors[p_1].remove(p)
