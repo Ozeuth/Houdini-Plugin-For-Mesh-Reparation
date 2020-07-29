@@ -408,43 +408,28 @@ for i in range(1, len(boundaries)):
     '''
     def get_angle(p, points_neighbors):
       p_1, p_2 = points_neighbors[p]
-      centroid = np.zeros(3)
-      c = 0
-      vs = []
+      polys_valid = []
       for prim in p.prims():
         if prim.type() == hou.primType.Polygon:
-          c += 1
-          vs.append(VirtualPolygon(prim.points()))
+          polys_valid.append(VirtualPolygon(prim.points()))
+
       c = 0
-      for v1, v2 in list(itertools.combinations(vs, 2)):
+      centroid = np.zeros(3)
+      for v1, v2 in list(itertools.combinations(polys_valid, 2)):
         common_edge = v1.get_common_edge(v2)
         if len(common_edge) == 2:
           centroid += 0.5 * (common_edge[0].position() + common_edge[1].position())
           c += 1
       centroid /= c
 
-      e0, e1, e2 = hou.Vector3(centroid - p.position()), p_1.position() - p.position(), p_2.position() - p.position()
-      u = e1 / e1.length()
-      w = (e2).cross(e1) / ((e2).cross(e1)).length()
-      v = w.cross(u)
+      e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
+      e_back = hou.Vector3(centroid) - p.position()
+      e_forward = e1 + e2
+      if e_forward.angleTo(e_back) < 90:
+        return 360 - e1.angleTo(e2)
+      else:
+        return e1.angleTo(e2)
 
-      uv_1 = (e1.dot(u), 0) # p_1 position in uv space
-      uv_2 = (e2.dot(u), e2.dot(v)) # p_2 position in uv space
-      p_proj = hou.Vector3(centroid) - (w.dot(e0)) * w
-      e_proj = p.position() - p_proj
-      uv_proj = (e_proj.dot(u), e_proj.dot(v)) # p^0 position in uv space, p^0 = closest point to centroid on plane
-      
-      uv_1_len = math.sqrt(math.pow(uv_1[0], 2) + math.pow(uv_1[1], 2))
-      uv_2_len = math.sqrt(math.pow(uv_2[0], 2) + math.pow(uv_2[1], 2))
-      uv_proj_len = math.sqrt(math.pow(uv_proj[0], 2) + math.pow(uv_proj[1], 2))
-
-      theta_1 = math.degrees(math.acos((uv_1[0] * uv_proj[0]) /(uv_1_len + uv_proj_len)))
-      theta_2 = math.degrees(math.acos((uv_2[0] * uv_proj[0] + uv_2[1] * uv_proj[1]) /(uv_2_len + uv_proj_len)))
-      #print("P: " + str(p.number()) + ": " + str(uv_1) + " " + str(uv_2) + " " + str(uv_proj) + " " + str((theta_1, theta_2)))
-
-      angle = (360 - e1.angleTo(e2)) if (theta_1 + theta_2 > 180) else e1.angleTo(e2)
-      return angle
-    
     def get_Nsectors(p, points_neighbors, n):
       # n:2 = point of bisector, n:3 = points of trisector, etc
       p_1, p_2 = points_neighbors[p]
@@ -463,7 +448,7 @@ for i in range(1, len(boundaries)):
       ns = []
       for new_point in new_points:
         ns.append(new_point.number())
-      print("Generated child for: " + str(p.number()) + str(ns))
+      #print("Generated child for: " + str(p.number()) + str(ns))
       return new_points
        
     points_neighbors = defaultdict(list)
@@ -479,8 +464,8 @@ for i in range(1, len(boundaries)):
     while len(points_neighbors) >= 3:
       p = min(points_angle, key=points_angle.get)
       p_1, p_2 = points_neighbors[p]
-    
-      if i ==40:
+      
+      if i ==100:
         ms = defaultdict(list)
         for mangle in points_angle:
           ms[mangle.number()] = points_angle[mangle]
