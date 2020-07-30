@@ -49,10 +49,15 @@ def get_poly(geo, ps):
 
 class VirtualPolygon():
   # class to avoid generation of Houdini Polygons during intermediary phases
-  # works for triangles and quads
-  def __init__(self, ps):
-    self.ps = ps
-    self.tri = (len(ps) == 3)
+  def __init__(self, virtual, data):
+    if virtual:
+      self.ps = data
+    else:
+      ps = []
+      for v in data.vertices():
+        ps.append(v.point())
+      self.ps = ps
+    self.virtual = virtual
 
   def __eq__(self, other):
     same = True
@@ -71,20 +76,24 @@ class VirtualPolygon():
     return str(self)
 
   def get_edges(self):
-    combinations = list(itertools.combinations(self.ps, 2))
-    if self.tri:
-      return combinations
-    combinations_lengths = []
-    for combination in combinations:
-      combinations_lengths.append((combination[0].position() - combination[1].position()).length())
-    return [edge for _, edge in sorted(zip(combinations_lengths, combinations))][:-2]
+    ps_zip1 = self.ps
+    ps_zip2 = ps_zip1[1:] + [ps_zip1[0]]
+
+    ps_zipped = []
+    for p_zip1, p_zip2 in np.array(zip(ps_zip1, ps_zip2)):
+      if p_zip1.number() < p_zip2.number():
+        ps_zipped.append([p_zip1, p_zip2])
+      else:
+        ps_zipped.append([p_zip2, p_zip1])
+    return ps_zipped
 
   def get_common_edge(self, other):
-    edge_points = []
-    for p in self.ps:
-      if p in other.ps:
-        edge_points.append(p)
-    return edge_points 
+    edges_self = self.get_edges()
+    edges_other = other.get_edges()
+    for edge_self in edges_self:
+      if edge_self in edges_other:
+        return edge_self
+    return None
 
 # NOTE: points ordered, but ordering breaks after deletion.
 #       Min triangulation relies on ordering
@@ -160,7 +169,7 @@ for i in range(1, len(boundaries)):
             min_cost_left, min_polys_left = self.tri_min(i, k)
             min_cost_right, min_polys_right = self.tri_min(k, j)
             curr_cost = cost_center + min_cost_left + min_cost_right
-            curr_polys = [VirtualPolygon([self.points[i], self.points[j], self.points[k]])] + min_polys_left + min_polys_right
+            curr_polys = [VirtualPolygon(True, [self.points[i], self.points[j], self.points[k]])] + min_polys_left + min_polys_right
             if curr_cost < min_cost:
               min_cost = curr_cost
               potential_polys[curr_cost] = curr_polys
@@ -199,7 +208,7 @@ for i in range(1, len(boundaries)):
       e_lens_hashed[unord_hash(p_1.number(), p_2.number())] = (p1_pos - p2_pos).length()
       for prim in edges_neighbor.prims():
         if prim.type() == hou.primType.Polygon:
-          exterior_edges_neighbors[unord_hash(p_1.number(), p_2.number())].append(VirtualPolygon(prim.points()))
+          exterior_edges_neighbors[unord_hash(p_1.number(), p_2.number())].append(VirtualPolygon(False, prim))
       exterior_points.append(p_1) if p_1 not in exterior_points else exterior_points
       exterior_points.append(p_2) if p_2 not in exterior_points else exterior_points
     
@@ -245,17 +254,17 @@ for i in range(1, len(boundaries)):
           p_c.setPosition(center)
           p_c.setAttribValue("N", c_normal)
           new_min_polys.remove(min_poly)
-          new_min_polys.extend([VirtualPolygon([p_i, p_c, p_j]), VirtualPolygon([p_i, p_c, p_k]), VirtualPolygon([p_k, p_c, p_j])])
+          new_min_polys.extend([VirtualPolygon(True, [p_i, p_c, p_j]), VirtualPolygon(True, [p_i, p_c, p_k]), VirtualPolygon(True, [p_k, p_c, p_j])])
           for t in ts:
             e_lens_hashed[unord_hash(t.number(), p_c.number())] = e_lens.pop()
             points_neighbors[t].append(p_c)
             others = list(filter(lambda x: x != t, ts))
-            interior_edges_neighbors[unord_hash(t.number(), p_c.number())] = [VirtualPolygon([t, p_c, others[0]]), VirtualPolygon([t, p_c, others[1]])]
+            interior_edges_neighbors[unord_hash(t.number(), p_c.number())] = [VirtualPolygon(True, [t, p_c, others[0]]), VirtualPolygon(True, [t, p_c, others[1]])]
           points_neighbors[p_c] = ts
           for t_1, t_2 in min_poly.get_edges():
             if not unord_hash(t_1.number(), t_2.number()) in exterior_edges_hashed:
               interior_edges_neighbors[unord_hash(t_1.number(), t_2.number())].remove(min_poly)
-              interior_edges_neighbors[unord_hash(t_1.number(), t_2.number())].append(VirtualPolygon([t_1, p_c, t_2]))
+              interior_edges_neighbors[unord_hash(t_1.number(), t_2.number())].append(VirtualPolygon(True, [t_1, p_c, t_2]))
           min_polys_created = True
     '''
     3C. Conduct Edge-Swapping
@@ -294,8 +303,8 @@ for i in range(1, len(boundaries)):
       poly_1_circumsphere_c, poly_1_circumsphere_r = find_circle(common_edge[0], poly_1_p, common_edge[1])
 
       if (poly_1_circumsphere_c - poly_2_p.position()).length() < poly_1_circumsphere_r:
-        new_poly_1 = VirtualPolygon([poly_1_p, common_edge[0], poly_2_p])
-        new_poly_2 = VirtualPolygon([poly_1_p, common_edge[1], poly_2_p])
+        new_poly_1 = VirtualPolygon(True, [poly_1_p, common_edge[0], poly_2_p])
+        new_poly_2 = VirtualPolygon(True, [poly_1_p, common_edge[1], poly_2_p])
         new_min_polys.remove(poly_1)
         new_min_polys.remove(poly_2)
         new_min_polys.extend([new_poly_1, new_poly_2])
@@ -354,7 +363,7 @@ for i in range(1, len(boundaries)):
       p_1, p_2 = edge.points()
       for prim in edge.prims():
         if prim.type() == hou.primType.Polygon:
-          exterior_edges_neighbors[unord_hash(p_1.number(), p_2.number())].append(VirtualPolygon(prim.points()))
+          exterior_edges_neighbors[unord_hash(p_1.number(), p_2.number())].append(VirtualPolygon(False, prim))
 
     hole_edges_neighbors = {}
     hole_edges_neighbors.update(interior_edges_neighbors)
@@ -408,28 +417,24 @@ for i in range(1, len(boundaries)):
     '''
     def get_angle(p, points_neighbors):
       p_1, p_2 = points_neighbors[p]
-      polys_valid = []
+      e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
+      sum_angle = 0
       for prim in p.prims():
         if prim.type() == hou.primType.Polygon:
-          polys_valid.append(VirtualPolygon(prim.points()))
-
-      c = 0
-      centroid = np.zeros(3)
-      for v1, v2 in list(itertools.combinations(polys_valid, 2)):
-        common_edge = v1.get_common_edge(v2)
-        if len(common_edge) == 2:
-          centroid += 0.5 * (common_edge[0].position() + common_edge[1].position())
-          c += 1
-      centroid /= c
-
-      e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
-      e_back = hou.Vector3(centroid) - p.position()
-      e_forward = e1 + e2
-      if e_forward.angleTo(e_back) < 90:
+          poly = VirtualPolygon(False, prim)
+          poly_edges = []
+          for p1, p2 in poly.get_edges():
+            if p == p1:
+              poly_edges.append(p2.position() - p1.position())
+            elif p == p2:
+              poly_edges.append(p1.position() - p2.position())
+          sum_angle += poly_edges[0].angleTo(poly_edges[1])
+      
+      if sum_angle < 180:
         return 360 - e1.angleTo(e2)
       else:
         return e1.angleTo(e2)
-
+        
     def get_Nsectors(p, points_neighbors, n):
       # n:2 = point of bisector, n:3 = points of trisector, etc
       p_1, p_2 = points_neighbors[p]
@@ -460,7 +465,14 @@ for i in range(1, len(boundaries)):
     while len(points_neighbors) >= 3:
       p = min(points_angle, key=points_angle.get)
       p_1, p_2 = points_neighbors[p]
-
+      if i == 2:
+        '''
+        ms = defaultdict(list)
+        for mangle in points_angle:
+          ms[mangle.number()] = points_angle[mangle]
+        ms = sorted(ms.items(), key=operator.itemgetter(1))        
+        print(ms)'''
+        break
       min_angle = points_angle[p]
 
       points_neighbors[p_1].remove(p)
@@ -495,6 +507,7 @@ for i in range(1, len(boundaries)):
       points_angle[p_2] = get_angle(p_2, points_neighbors)
       del points_angle[p]
       del points_neighbors[p]
+      print(i, len(points_neighbors))
       i += 1
     #get_poly(geo, points_neighbors.keys())
 
