@@ -451,6 +451,33 @@ for i in range(1, len(boundaries)):
         new_point.setAttribValue("N", normal)
         new_points.append(new_point)
       return new_points
+    
+    def correct_normal(p, points_neighbors):
+      n = int(len(points_neighbors) / 10)
+      p_prev = p
+      p_curr = points_neighbors[p][0]
+      e_dir = [np.zeros(3), np.zeros(3)]
+      e_len = [0, 0]
+      for direction in range(2):
+        p_curr = points_neighbors[p][direction]
+        for _ in range(n):
+          e_curr = p_curr.position() - p_prev.position()
+          e_dir[direction] += e_curr
+          e_len[direction] += e_curr.length()
+
+          p_1, p_2 = points_neighbors[p_curr]
+          p_next = p_2 if p_1 == p_prev else p_1
+          p_prev = p_curr
+          p_curr = p_next
+      e_dir1 = e_dir[0] / e_len[0]
+      e_dir2 = e_dir[1] / e_len[1]
+
+      alpha, beta = 0.6, 0.4
+      normal_i = p.attribValue("N")
+      normal_e = e_dir1.cross(e_dir2) / (e_dir1.length() + e_dir2.length())
+      normal_c = alpha * normal_i + beta * normal_e
+      p.setAttribValue("N", normal_c)
+
 
     points_neighbors = defaultdict(list)
     for edge in edges:
