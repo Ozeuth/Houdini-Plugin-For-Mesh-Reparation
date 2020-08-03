@@ -451,7 +451,7 @@ for i in range(1, len(boundaries)):
         new_point.setAttribValue("N", normal)
         new_points.append(new_point)
       return new_points
-       
+
     points_neighbors = defaultdict(list)
     for edge in edges:
       p_1, p_2 = edge.points()
@@ -465,14 +465,14 @@ for i in range(1, len(boundaries)):
     while len(points_neighbors) >= 3:
       p = min(points_angle, key=points_angle.get)
       p_1, p_2 = points_neighbors[p]
+      '''
       if i == 2:
-        '''
         ms = defaultdict(list)
         for mangle in points_angle:
           ms[mangle.number()] = points_angle[mangle]
         ms = sorted(ms.items(), key=operator.itemgetter(1))        
-        print(ms)'''
-        break
+        print(ms)
+        break'''
       min_angle = points_angle[p]
 
       points_neighbors[p_1].remove(p)
