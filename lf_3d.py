@@ -455,15 +455,14 @@ for i in range(1, len(boundaries)):
 
     def optimize_new_point(p, points_neighbors, new_point):
       # 1. Correct the normal
-      n = int(len(points_neighbors) / 10)
+      n = int((math.ceil(len(points_neighbors)/ float(10))))
       p_prev = p
-      p_curr = points_neighbors[p][0]
       e_dir = [np.zeros(3), np.zeros(3)]
       e_len = [0, 0]
       for direction in range(2):
         p_curr = points_neighbors[p][direction]
         for _ in range(n):
-          e_curr = p_curr.position() - p_prev.position()
+          e_curr = p_curr.position() - p.position()
           e_dir[direction] += e_curr
           e_len[direction] += e_curr.length()
 
@@ -475,8 +474,10 @@ for i in range(1, len(boundaries)):
       e_dir2 = hou.Vector3(e_dir[1] / e_len[1])
 
       alpha, beta = 0.6, 0.4
-      normal_i = p.attribValue("N")
+      normal_i = hou.Vector3(p.attribValue("N"))
       normal_e = e_dir1.cross(e_dir2) / e_dir1.cross(e_dir2).length()
+      if (normal_i.angleTo(normal_e) > 90):
+        normal_e = e_dir2.cross(e_dir1) / e_dir2.cross(e_dir1).length()
       normal_c = alpha * normal_i + beta * normal_e
       p.setAttribValue("N", normal_c)
 
@@ -489,7 +490,7 @@ for i in range(1, len(boundaries)):
 
       # 3. Solve for phi, through A or by minimizing F(ei, o)
       eo_prev = new_point.position() - p.position()
-      w1, w2 = 0.5, 0.5
+      w1, w2 = 0.8, 0.2
       A = w1 * eo_prev.length() * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
       if abs(A) < 1:
         phi = math.acos(A)
@@ -528,15 +529,20 @@ for i in range(1, len(boundaries)):
                                   0, 0, 1, -1 * p.position()[2], 
                                   0, 0, 0, 1)).transposed()
         #3d. Apply complete rotation and scale to normal_c
-        rotation = inverse_trans * inverse_y * inverse_x * rotation_z * rotation_x * rotation_y * translation
-        eo_new = eo_prev.length() * rotation * normal_c
+        #rotation = inverse_trans * inverse_y * inverse_x * rotation_z * rotation_x * rotation_y * translation
+        rotation = translation * rotation_y * rotation_z * inverse_x * inverse_y * inverse_trans
+        eo_new = normal_c * rotation
+        #eo_new /= eo_new.length()
+        eo_new = eo_prev.length() * eo_new
       else:
+        print(abs(A))
         print("NOT READY")
         '''
         F(eo_new) = (w1 * math.pow((((2 *  * eo_new) / math.pow(eo_new.length(), 2)) - taubin_curvature), 2) 
                     + w2 * math.pow((eo_new - eo_prev).length(), 2))'''
       # 4. Calculate optimal new_point
-      new_point.setPosition(eo_new - p.position())
+
+      new_point.setPosition(p.position() + eo_new)
       
 
     points_neighbors = defaultdict(list)
@@ -552,14 +558,8 @@ for i in range(1, len(boundaries)):
     while len(points_neighbors) >= 3:
       p = min(points_angle, key=points_angle.get)
       p_1, p_2 = points_neighbors[p]
-      '''
-      if i == 2:
-        ms = defaultdict(list)
-        for mangle in points_angle:
-          ms[mangle.number()] = points_angle[mangle]
-        ms = sorted(ms.items(), key=operator.itemgetter(1))        
-        print(ms)
-        break'''
+      if i == 1:
+        break
       min_angle = points_angle[p]
 
       points_neighbors[p_1].remove(p)
@@ -578,6 +578,7 @@ for i in range(1, len(boundaries)):
         points_neighbors[p_2].append(new_point)
         points_neighbors[new_point] = [p_1, p_2]
         points_angle[new_point] = get_angle(new_point, points_neighbors)
+        optimize_new_point(p, points_neighbors, new_point)
       else:
         new_point_1, new_point_2 = get_Nsectors(p, points_neighbors, 3)
         ps_1, ps_2, ps_3 = [p, p_1, new_point_1], [p, new_point_1, new_point_2], [p, p_2, new_point_2]
@@ -590,6 +591,8 @@ for i in range(1, len(boundaries)):
         points_neighbors[new_point_2] = [new_point_1, p_2]
         points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
         points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
+        optimize_new_point(p, points_neighbors, new_point_1)
+        optimize_new_point(p, points_neighbors, new_point_2)
       points_angle[p_1] = get_angle(p_1, points_neighbors)
       points_angle[p_2] = get_angle(p_2, points_neighbors)
       del points_angle[p]
