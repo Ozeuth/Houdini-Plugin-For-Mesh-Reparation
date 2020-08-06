@@ -3,6 +3,7 @@ import itertools
 import math
 import numpy as np
 import operator
+import copy
 from collections import defaultdict
 
 node = hou.pwd()
@@ -46,6 +47,90 @@ def get_poly(geo, ps):
   for p in ps:
     new_poly.addVertex(p)
   return new_poly
+
+# NOTE: Houdini 2020 does not support scipy. Special thanks to François Chollet for his np-only minimizer implementation
+def minimize(f, x_start,
+            step=0.1, no_improve_thr=10e-6,
+            no_improv_break=10, max_iter=0,
+            alpha=1., gamma=2., rho=-0.5, sigma=0.5):
+    # init
+    dim = len(x_start)
+    prev_best = f(x_start)
+    no_improv = 0
+    res = [[x_start, prev_best]]
+
+    for i in range(dim):
+        x = copy.copy(x_start)
+        x[i] = x[i] + step
+        score = f(x)
+        res.append([x, score])
+
+    # simplex iter
+    iters = 0
+    while 1:
+        # order
+        res.sort(key=lambda x: x[1])
+        best = res[0][1]
+
+        # break after max_iter
+        if max_iter and iters >= max_iter:
+            return res[0]
+        iters += 1
+
+        # break after no_improv_break iterations with no improvement
+        #print('...best so far:' + str(best))
+        if best < prev_best - no_improve_thr:
+            no_improv = 0
+            prev_best = best
+        else:
+            no_improv += 1
+
+        if no_improv >= no_improv_break:
+            return res[0]
+
+        # centroid
+        x0 = [0.] * dim
+        for tup in res[:-1]:
+            for i, c in enumerate(tup[0]):
+                x0[i] += c / (len(res)-1)
+
+        # reflection
+        xr = x0 + alpha*(x0 - res[-1][0])
+        rscore = f(xr)
+        if res[0][1] <= rscore < res[-2][1]:
+            del res[-1]
+            res.append([xr, rscore])
+            continue
+
+        # expansion
+        if rscore < res[0][1]:
+            xe = x0 + gamma*(x0 - res[-1][0])
+            escore = f(xe)
+            if escore < rscore:
+                del res[-1]
+                res.append([xe, escore])
+                continue
+            else:
+                del res[-1]
+                res.append([xr, rscore])
+                continue
+
+        # contraction
+        xc = x0 + rho*(x0 - res[-1][0])
+        cscore = f(xc)
+        if cscore < res[-1][1]:
+            del res[-1]
+            res.append([xc, cscore])
+            continue
+
+        # reduction
+        x1 = res[0][0]
+        nres = []
+        for tup in res:
+            redx = x1 + sigma*(tup[0] - x1)
+            score = f(redx)
+            nres.append([redx, score])
+        res = nres
 
 class VirtualPolygon():
   # class to avoid generation of Houdini Polygons during intermediary phases
@@ -498,7 +583,7 @@ for i in range(1, len(boundaries)):
       e_dir1 = hou.Vector3(e_dir[0] / e_len[0])
       e_dir2 = hou.Vector3(e_dir[1] / e_len[1])
 
-      alpha, beta = 0.6, 0.4
+      alpha, beta = 0.5, 0.5
       normal_i = hou.Vector3(p.attribValue("N"))
       normal_e1 = e_dir1.cross(e_dir2) / e_dir1.cross(e_dir2).length()
       normal_e2 = e_dir2.cross(e_dir1) / e_dir2.cross(e_dir1).length()
@@ -517,17 +602,18 @@ for i in range(1, len(boundaries)):
       len_ave = 0.5 * (e1.length() + e2.length())
       taubin_curvature = (normal_c.dot(e1) / math.pow(e1.length(), 2)
                          + normal_c.dot(e2) / math.pow(e2.length(), 2))
-      # 3. Solve for phi, through A or by minimizing F(ei, o)
+      # 3. Solve for eo_new, through rotating normal_c, or by minimizing F(eo_new)
       for new_point in new_points:
         eo_prev = new_point.position() - p.position()
-        w1, w2 = 0.8, 0.2
+        w1, w2 = 0.5, 0.5
         A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
         print("A: " + str(A))
+        # 3_1: Rotate normal_c by phi around ns, plane normal of nc and eo_prev, to get eo_new
         if abs(A) < 1:
           phi = math.acos(A)
           print("phi: " + str(math.degrees(phi)))
           normal_s = normal_c.cross(eo_prev) / (normal_c.cross(eo_prev)).length()
-          #3a. Transform the scene so that the z-axis is aligned with normal_s
+          #3_1a. Transform the scene so that the z-axis is aligned with normal_s
           translation = hou.Matrix4((1, 0, 0, p.position()[0],
                                     0, 1, 0, p.position()[1],
                                     0, 0, 1, p.position()[2], 
@@ -542,12 +628,12 @@ for i in range(1, len(boundaries)):
                                     0, v/d,  -1 * normal_s[1]/d, 0,
                                     0, normal_s[1]/d, v/d, 0, 
                                     0, 0, 0, 1)) 
-          #3b. Carry out a rotation about the z-axis by phi
+          #3_1b. Carry out a rotation about the z-axis by phi
           rotation_z = hou.Matrix4((math.cos(phi), -1 * math.sin(phi), 0, 0,
                                     math.sin(phi), math.cos(phi), 0, 0,
                                     0, 0, 1, 0,
                                     0, 0, 0, 1))
-          #3c. Transform the scene back using the inverse of the transformation in step 1
+          #3_1c. Transform the scene back using the inverse of the transformation in step 1
           inverse_x = hou.Matrix4((1, 0, 0, 0,
                                   0, v/d,  normal_s[1]/d, 0,
                                   0, -1 * normal_s[1]/d, v/d, 0, 
@@ -560,14 +646,18 @@ for i in range(1, len(boundaries)):
                                     0, 1, 0, -1 * p.position()[1],
                                     0, 0, 1, -1 * p.position()[2], 
                                     0, 0, 0, 1)).transposed()
-          #3d. Apply complete rotation and scale to normal_c
+          #3_1d. Apply complete rotation and scale to normal_c
           rotation = inverse_trans * inverse_y * inverse_x * rotation_z * rotation_x * rotation_y * translation
-          #rotation = translation * rotation_y * rotation_x * rotation_z * inverse_x * inverse_y * inverse_trans
           eo_new = len_ave * normal_c.multiplyAsDir(rotation)
         else:
-          '''
-          F(eo_new) = (w1 * math.pow((((2 *  * eo_new) / math.pow(eo_new.length(), 2)) - taubin_curvature), 2) 
-                      + w2 * math.pow((eo_new - eo_prev).length(), 2))'''
+          # 3_2: Minimize F(eo_new)=w1*((2 * normal_c^T * eo_new)/||eo_new||^2 - taubin_curvature)
+          #                        + w2*(||eo_new - eo_prev||^2) ,to get eo_new
+          def weighted_function(eo_new):
+            eo_new = hou.Vector3(eo_new)
+            res = (w1 * ((2 * normal_c.dot(eo_new)) / math.pow(eo_new.length(), 2) - taubin_curvature)
+                  + w2 * math.pow((eo_new - eo_prev).length(), 2))
+            return res
+          eo_new = hou.Vector3(minimize(weighted_function,  np.array(eo_prev))[0]).normalized() * len_ave
         # 4. Calculate optimal new_point
         new_point.setPosition(p.position() + eo_new)
       
