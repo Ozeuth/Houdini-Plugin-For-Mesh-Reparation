@@ -478,7 +478,7 @@ for i in range(1, len(boundaries)):
         return [new_point_1, new_point_2]
     
 
-    def optimize_new_point(p, points_neighbors, new_point):
+    def optimize_new_point(p, points_neighbors, new_points):
       # 1. Correct the normal
       n = int((math.ceil(len(points_neighbors)/ float(10))))
       p_prev = p
@@ -518,57 +518,58 @@ for i in range(1, len(boundaries)):
       taubin_curvature = (normal_c.dot(e1) / math.pow(e1.length(), 2)
                          + normal_c.dot(e2) / math.pow(e2.length(), 2))
       # 3. Solve for phi, through A or by minimizing F(ei, o)
-      eo_prev = new_point.position() - p.position()
-      w1, w2 = 0.85, 0.15
-      A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
-      if abs(A) < 1:
-        phi = math.acos(A)
-        print(math.degrees(phi))
-        normal_s = normal_c.cross(eo_prev) / (normal_c.cross(eo_prev)).length()
-        #3a. Transform the scene so that the z-axis is aligned with normal_s
-        translation = hou.Matrix4((1, 0, 0, p.position()[0],
-                                  0, 1, 0, p.position()[1],
-                                  0, 0, 1, p.position()[2], 
-                                  0, 0, 0, 1)).transposed()
-        v = math.sqrt(math.pow(normal_s[0], 2) + math.pow(normal_s[2], 2))
-        rotation_y = hou.Matrix4((normal_s[2]/v, 0, -1 * normal_s[0]/v, 0,
-                                  0, 1, 0, 0,
-                                  normal_s[0]/v, 0, normal_s[2]/v, 0, 
-                                  0, 0, 0, 1))
-        d = math.sqrt(math.pow(normal_s[0], 2) + math.pow(normal_s[1], 2) + math.pow(normal_s[2], 2))
-        rotation_x = hou.Matrix4((1, 0, 0, 0,
-                                  0, v/d,  -1 * normal_s[1]/d, 0,
-                                  0, normal_s[1]/d, v/d, 0, 
+      for new_point in new_points:
+        eo_prev = new_point.position() - p.position()
+        w1, w2 = 0.8, 0.2
+        A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
+        print("A: " + str(A))
+        if abs(A) < 1:
+          phi = math.acos(A)
+          print("phi: " + str(math.degrees(phi)))
+          normal_s = normal_c.cross(eo_prev) / (normal_c.cross(eo_prev)).length()
+          #3a. Transform the scene so that the z-axis is aligned with normal_s
+          translation = hou.Matrix4((1, 0, 0, p.position()[0],
+                                    0, 1, 0, p.position()[1],
+                                    0, 0, 1, p.position()[2], 
+                                    0, 0, 0, 1)).transposed()
+          v = math.sqrt(math.pow(normal_s[0], 2) + math.pow(normal_s[2], 2))
+          rotation_y = hou.Matrix4((normal_s[2]/v, 0, -1 * normal_s[0]/v, 0,
+                                    0, 1, 0, 0,
+                                    normal_s[0]/v, 0, normal_s[2]/v, 0, 
+                                    0, 0, 0, 1))
+          d = math.sqrt(math.pow(normal_s[0], 2) + math.pow(normal_s[1], 2) + math.pow(normal_s[2], 2))
+          rotation_x = hou.Matrix4((1, 0, 0, 0,
+                                    0, v/d,  -1 * normal_s[1]/d, 0,
+                                    0, normal_s[1]/d, v/d, 0, 
+                                    0, 0, 0, 1)) 
+          #3b. Carry out a rotation about the z-axis by phi
+          rotation_z = hou.Matrix4((math.cos(phi), -1 * math.sin(phi), 0, 0,
+                                    math.sin(phi), math.cos(phi), 0, 0,
+                                    0, 0, 1, 0,
+                                    0, 0, 0, 1))
+          #3c. Transform the scene back using the inverse of the transformation in step 1
+          inverse_x = hou.Matrix4((1, 0, 0, 0,
+                                  0, v/d,  normal_s[1]/d, 0,
+                                  0, -1 * normal_s[1]/d, v/d, 0, 
                                   0, 0, 0, 1)) 
-        #3b. Carry out a rotation about the z-axis by phi
-        rotation_z = hou.Matrix4((math.cos(phi), -1 * math.sin(phi), 0, 0,
-                                  math.sin(phi), math.cos(phi), 0, 0,
-                                  0, 0, 1, 0,
+          inverse_y = hou.Matrix4((normal_s[2]/v, 0, normal_s[0]/v, 0,
+                                  0, 1, 0, 0,
+                                  -1 * normal_s[0]/v, 0, normal_s[2]/v, 0, 
                                   0, 0, 0, 1))
-        #3c. Transform the scene back using the inverse of the transformation in step 1
-        inverse_x = hou.Matrix4((1, 0, 0, 0,
-                                 0, v/d,  normal_s[1]/d, 0,
-                                 0, -1 * normal_s[1]/d, v/d, 0, 
-                                 0, 0, 0, 1)) 
-        inverse_y = hou.Matrix4((normal_s[2]/v, 0, normal_s[0]/v, 0,
-                                 0, 1, 0, 0,
-                                 -1 * normal_s[0]/v, 0, normal_s[2]/v, 0, 
-                                 0, 0, 0, 1))
-        inverse_trans = hou.Matrix4((1, 0, 0, -1 * p.position()[0],
-                                  0, 1, 0, -1 * p.position()[1],
-                                  0, 0, 1, -1 * p.position()[2], 
-                                  0, 0, 0, 1)).transposed()
-        #3d. Apply complete rotation and scale to normal_c
-        rotation = inverse_trans * inverse_y * inverse_x * rotation_z * rotation_x * rotation_y * translation
-        #rotation = translation * rotation_y * rotation_x * rotation_z * inverse_x * inverse_y * inverse_trans
-        eo_new = len_ave * normal_c.multiplyAsDir(rotation)
-      else:
-        
-        '''
-        F(eo_new) = (w1 * math.pow((((2 *  * eo_new) / math.pow(eo_new.length(), 2)) - taubin_curvature), 2) 
-                    + w2 * math.pow((eo_new - eo_prev).length(), 2))'''
-      # 4. Calculate optimal new_point
-      new_point.setPosition(p.position() + eo_new)
+          inverse_trans = hou.Matrix4((1, 0, 0, -1 * p.position()[0],
+                                    0, 1, 0, -1 * p.position()[1],
+                                    0, 0, 1, -1 * p.position()[2], 
+                                    0, 0, 0, 1)).transposed()
+          #3d. Apply complete rotation and scale to normal_c
+          rotation = inverse_trans * inverse_y * inverse_x * rotation_z * rotation_x * rotation_y * translation
+          #rotation = translation * rotation_y * rotation_x * rotation_z * inverse_x * inverse_y * inverse_trans
+          eo_new = len_ave * normal_c.multiplyAsDir(rotation)
+        else:
+          '''
+          F(eo_new) = (w1 * math.pow((((2 *  * eo_new) / math.pow(eo_new.length(), 2)) - taubin_curvature), 2) 
+                      + w2 * math.pow((eo_new - eo_prev).length(), 2))'''
+        # 4. Calculate optimal new_point
+        new_point.setPosition(p.position() + eo_new)
       
 
     points_neighbors = defaultdict(list)
@@ -595,6 +596,7 @@ for i in range(1, len(boundaries)):
         get_poly(geo, ps)
         points_neighbors[p_1].append(p_2)
         points_neighbors[p_2].append(p_1)
+        optimize_new_point(p, points_neighbors, [])
       elif min_angle <= 135:
         new_point = get_Nsectors(p, points_neighbors, 2)[0]
         ps_1, ps_2 = [p, p_1, new_point], [p, p_2, new_point]
@@ -604,7 +606,7 @@ for i in range(1, len(boundaries)):
         points_neighbors[p_2].append(new_point)
         points_neighbors[new_point] = [p_1, p_2]
         points_angle[new_point] = get_angle(new_point, points_neighbors)
-        #optimize_new_point(p, points_neighbors, new_point)
+        optimize_new_point(p, points_neighbors, [new_point])
       else:
         new_point_1, new_point_2 = get_Nsectors(p, points_neighbors, 3)
         ps_1, ps_2, ps_3 = [p, p_1, new_point_1], [p, new_point_1, new_point_2], [p, p_2, new_point_2]
@@ -617,8 +619,7 @@ for i in range(1, len(boundaries)):
         points_neighbors[new_point_2] = [new_point_1, p_2]
         points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
         points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
-        #optimize_new_point(p, points_neighbors, new_point_1)
-        #optimize_new_point(p, points_neighbors, new_point_2)
+        optimize_new_point(p, points_neighbors, [new_point_1, new_point_2])
       points_angle[p_1] = get_angle(p_1, points_neighbors)
       points_angle[p_2] = get_angle(p_2, points_neighbors)
       del points_angle[p]
