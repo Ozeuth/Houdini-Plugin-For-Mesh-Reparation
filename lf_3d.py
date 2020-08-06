@@ -451,18 +451,19 @@ for i in range(1, len(boundaries)):
       # trisector approximated via successive bisections, 1/3 = 1/4 + 1/16 + 1/64 + ...
       elif n == 3:
         new_point_1, new_point_2 = geo.createPoint(), geo.createPoint()
-        trisector_1 = hou.Vector3((0, 0, 0))
-        steps = 8
-        curr_other = e2
-        for i in range(steps * 2):
-          curr_bisector = (curr_other.length() * e1 + e1.length() * curr_other)
-          if i % 2 == 1:
-            print("count")
-            trisector_1 += curr_bisector
+        max_steps, epsilon = 10, 0.5
+        curr_e1, curr_e2 = e1, e2
+        curr_trisector = curr_e1
+        for i in range(max_steps * 2):
+          prev_trisector = curr_trisector
+          curr_trisector = curr_e2.length() * curr_e1 + curr_e1.length() * curr_e2
+          if prev_trisector.angleTo(curr_trisector) < epsilon:
+            break
+          if i % 2 == 0:
+            curr_e2 = curr_trisector
           else:
-            print("not")
-          curr_other = curr_bisector
-
+            curr_e1 = curr_trisector
+        trisector_1 = curr_trisector
         trisector_2 = (e2.length() * trisector_1 + trisector_1.length() * e2).normalized()
         eo_prev_1, eo_prev_2 = len_ave * trisector_1.normalized(), len_ave * trisector_2
 
@@ -474,10 +475,6 @@ for i in range(1, len(boundaries)):
         normal_2 = proportion_2 * hou.Vector3(p_1.attribValue("N")) + proportion_1 * hou.Vector3(p_2.attribValue("N"))
         new_point_1.setAttribValue("N", normal_1)
         new_point_2.setAttribValue("N", normal_2)
-        print(e1.angleTo(eo_prev_1))
-        print(eo_prev_1.angleTo(eo_prev_2))
-        print(eo_prev_2.angleTo(e2))
-        
         return [new_point_1, new_point_2]
     
 
