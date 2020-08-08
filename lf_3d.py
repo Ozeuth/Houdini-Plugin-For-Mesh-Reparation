@@ -434,7 +434,6 @@ for i in range(1, len(boundaries)):
       where for two polygons (p_i, p_j, p_k), (p_i, p_j, p_m) adjacent to interior edge eij,
         alpha = angle_ikj
         beta = angle_imj
-
     Then solve f, f = [f0, f1, f2]
     M *    fd    =    vd
     M * | fd_i | = | vd_i |
@@ -605,7 +604,7 @@ for i in range(1, len(boundaries)):
       # 3. Solve for eo_new, through rotating normal_c, or by minimizing F(eo_new)
       for new_point in new_points:
         eo_prev = new_point.position() - p.position()
-        w1, w2 = 0.5, 0.5
+        w1, w2 = 0.8, 0.2
         A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
         print("A: " + str(A))
         # 3_1: Rotate normal_c by phi around ns, plane normal of nc and eo_prev, to get eo_new
@@ -660,6 +659,11 @@ for i in range(1, len(boundaries)):
           eo_new = hou.Vector3(minimize(weighted_function,  np.array(eo_prev))[0]).normalized() * len_ave
         # 4. Calculate optimal new_point
         new_point.setPosition(p.position() + eo_new)
+      # 5. Swap trisector vertex position
+      if len(new_points) == 2:
+        temp = new_points[0].position()
+        new_points[0].setPosition(new_points[1].position())
+        new_points[1].setPosition(temp)
       
 
     points_neighbors = defaultdict(list)
