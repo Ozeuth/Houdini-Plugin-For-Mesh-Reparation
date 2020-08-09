@@ -529,7 +529,14 @@ for i in range(1, len(boundaries)):
         new_point = geo.createPoint()
         eo_prev = len_ave * (e2.length() * e1 + e1.length() * e2).normalized()
         new_point.setPosition(p.position() + eo_prev)
-        normal =  0.5 * hou.Vector3(p_1.attribValue("N")) + 0.5 * hou.Vector3(p_2.attribValue("N"))
+        
+        w_p_1 = (new_point.position() - p_1.position()).length()
+        w_p_2 = (new_point.position() - p_2.position()).length()
+        w_p = (new_point.position() - p.position()).length()
+        total_w = w_p_1 + w_p_2 + w_p
+        normal = (w_p_1 / total_w * hou.Vector3(p_1.attribValue("N"))
+                + w_p_2 / total_w * hou.Vector3(p_2.attribValue("N"))
+                + w_p / total_w * hou.Vector3(p.attribValue("N")))
         new_point.setAttribValue("N", normal)
         return [new_point]
       # trisector approximated via successive bisections, 1/3 = 1/4 + 1/16 + 1/64 + ...
@@ -538,6 +545,7 @@ for i in range(1, len(boundaries)):
         max_steps, epsilon = 10, 0.5
         curr_e1, curr_e2 = e1, e2
         curr_trisector = curr_e1
+        bisector = len_ave * (e2.length() * e1 + e1.length() * e2).normalized()
         for i in range(max_steps * 2):
           prev_trisector = curr_trisector
           curr_trisector = curr_e2.length() * curr_e1 + curr_e1.length() * curr_e2
@@ -553,11 +561,33 @@ for i in range(1, len(boundaries)):
 
         new_point_1.setPosition(p.position() + eo_prev_1)
         new_point_2.setPosition(p.position() + eo_prev_2)
-        
-        proportion_1, proportion_2 =(1/float(n)), (1 - 1/float(n))
-        normal_1 = proportion_1 * hou.Vector3(p_1.attribValue("N")) + proportion_2 * hou.Vector3(p_2.attribValue("N"))
-        normal_2 = proportion_2 * hou.Vector3(p_1.attribValue("N")) + proportion_1 * hou.Vector3(p_2.attribValue("N"))
+
+        e_proj = 0.5 * (eo_prev_1.dot(bisector) + eo_prev_2.dot(bisector)) / bisector.length()
+        p_proj = p.position() + e_proj * bisector.normalized()
+        w_proj_p_1 = (p_proj - p_1.position()).length()
+        w_proj_p_2 = (p_proj - p_2.position()).length()
+        w_proj_p = (p_proj - p.position()).length()
+        total_w_proj = w_proj_p_1 + w_proj_p + w_proj_p_2
+        normal_proj = (w_proj_p_1 / total_w_proj * hou.Vector3(p_1.attribValue("N"))
+                     + w_proj_p_2 / total_w_proj* hou.Vector3(p_2.attribValue("N"))
+                     + w_proj_p / total_w_proj * hou.Vector3(p.attribValue("N")))
+
+        w_1_p_1 = (new_point_1.position() - p_1.position()).length()
+        w_1_p = (new_point_1.position() - p.position()).length()
+        w_1_p_proj = (new_point_1.position() - p_proj).length()
+        total_w_1 = w_1_p_1 + w_1_p + w_1_p_proj
+        normal_1 = (w_1_p_1 / total_w_1 * hou.Vector3(p_1.attribValue("N"))
+                  + w_1_p / total_w_1 * hou.Vector3(p.attribValue("N"))
+                  + w_1_p_proj / total_w_1 * normal_proj)
         new_point_1.setAttribValue("N", normal_1)
+
+        w_2_p_2 = (new_point_2.position() - p_2.position()).length()
+        w_2_p = (new_point_2.position() - p.position()).length()
+        w_2_p_proj = (new_point_2.position() - p_proj).length()
+        total_w_2 = w_2_p_2 + w_2_p + w_2_p_proj
+        normal_2 = (w_2_p_2 / total_w_2 * hou.Vector3(p_2.attribValue("N"))
+                  + w_2_p / total_w_2 * hou.Vector3(p.attribValue("N"))
+                  + w_2_p_proj / total_w_2 * normal_proj)
         new_point_2.setAttribValue("N", normal_2)
         return [new_point_1, new_point_2]
     
@@ -608,7 +638,7 @@ for i in range(1, len(boundaries)):
         A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
         print("A: " + str(A))
         # 3_1: Rotate normal_c by phi around ns, plane normal of nc and eo_prev, to get eo_new
-        if abs(A) < 1:
+        if abs(A) <= 1:
           phi = math.acos(A)
           print("phi: " + str(math.degrees(phi)))
           normal_s = normal_c.cross(eo_prev) / (normal_c.cross(eo_prev)).length()
