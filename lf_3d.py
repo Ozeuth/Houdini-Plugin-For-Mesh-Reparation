@@ -648,6 +648,8 @@ for i in range(1, len(boundaries)):
         eo_prev = new_point.position() - p.position()
         w1, w2 = 0.8, 0.2
         A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
+        print("comp1: " + str(len_ave * taubin_curvature))
+        print("comp2: " + str(normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)))
         print("A: " + str(A))
         # 3_1: Rotate normal_c by phi around ns, plane normal of nc and eo_prev, to get eo_new
         if abs(A) <= 1:
@@ -691,18 +693,18 @@ for i in range(1, len(boundaries)):
           rotation = inverse_trans * inverse_y * inverse_x * rotation_z * rotation_x * rotation_y * translation
           eo_new = len_ave * normal_c.multiplyAsDir(rotation)
         else:
-          # 3_2: Minimize F(eo_new)=w1*((2 * normal_c^T * eo_new)/||eo_new||^2 - taubin_curvature)
-          #                        + w2*(||eo_new - eo_prev||^2) ,to get eo_new
+          # 3_2: Minimize F(eo_new)=w1*((2 * normal_c^T * eo_new)/||eo_new||^2 - taubin_curvature)^2
+          #                        + w2*(||eo_new - eo_prev||)^2 ,to get eo_new
           def weighted_function(eo_new):
             eo_new = hou.Vector3(eo_new)
-            res = (w1 * ((2 * normal_c.dot(eo_new)) / math.pow(eo_new.length(), 2) - taubin_curvature)
+            res = (w1 * math.pow((2 * normal_c.dot(eo_new)) / math.pow(eo_new.length(), 2) - taubin_curvature, 2)
                   + w2 * math.pow((eo_new - eo_prev).length(), 2))
             return res
           eo_new = hou.Vector3(minimize(weighted_function,  np.array(eo_prev))[0]).normalized() * len_ave
         # 4. Calculate optimal new_point
         new_point.setPosition(p.position() + eo_new)
       # 5. Swap trisector vertex position
-      if len(new_points) == 2:
+      if len(new_points) == 2 and abs(A) <= 1:
         temp = new_points[0].position()
         new_points[0].setPosition(new_points[1].position())
         new_points[1].setPosition(temp)
