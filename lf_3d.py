@@ -48,6 +48,21 @@ def get_poly(geo, ps):
     new_poly.addVertex(p)
   return new_poly
 
+def get_normal(geo, p):
+  total_w = 0
+  ws, ns = [], []
+  for prim in p.prims():
+    if prim.type() == hou.primType.Polygon:
+      w, n = prim.intrinsicValue("measuredarea"), prim.normal()
+      total_w += w
+      ws.append(w)
+      ns.append(n)
+  normal = hou.Vector3(0, 0, 0)
+  for w, n in zip(ws, ns):
+    normal += w / total_w * n
+  p.setAttribValue("N", normal)
+  return normal
+
 # NOTE: Houdini 2020 does not support scipy. Special thanks to François Chollet for his np-only minimizer implementation
 def minimize(f, x_start,
             step=0.1, no_improve_thr=10e-6,
@@ -524,20 +539,19 @@ for i in range(1, len(boundaries)):
       p_1, p_2 = points_neighbors[p]
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
       len_ave = 0.5 * (e1.length() + e2.length())
+      # no sector, direct fill
+      if n == 1:
+        get_poly(geo, [p, p_1, p_2])
       # bisector computed using angle bisector theorem
-      if n == 2:
+      elif n == 2:
         new_point = geo.createPoint()
         eo_prev = len_ave * (e2.length() * e1 + e1.length() * e2).normalized()
         new_point.setPosition(p.position() + eo_prev)
+
+        get_poly(geo, [p, p_1, new_point])
+        get_poly(geo, [p, new_point, p_2])
         
-        w_p_1 = (new_point.position() - p_1.position()).length()
-        w_p_2 = (new_point.position() - p_2.position()).length()
-        w_p = (new_point.position() - p.position()).length()
-        total_w = w_p_1 + w_p_2 + w_p
-        normal = (w_p_1 / total_w * hou.Vector3(p_1.attribValue("N"))
-                + w_p_2 / total_w * hou.Vector3(p_2.attribValue("N"))
-                + w_p / total_w * hou.Vector3(p.attribValue("N")))
-        new_point.setAttribValue("N", normal)
+        get_normal(geo, new_point)
         return [new_point]
       # trisector approximated via successive bisections, 1/3 = 1/4 + 1/16 + 1/64 + ...
       elif n == 3:
@@ -545,7 +559,6 @@ for i in range(1, len(boundaries)):
         max_steps, epsilon = 10, 0.5
         curr_e1, curr_e2 = e1, e2
         curr_trisector = curr_e1
-        bisector = len_ave * (e2.length() * e1 + e1.length() * e2).normalized()
         for i in range(max_steps * 2):
           prev_trisector = curr_trisector
           curr_trisector = curr_e2.length() * curr_e1 + curr_e1.length() * curr_e2
@@ -562,37 +575,15 @@ for i in range(1, len(boundaries)):
         new_point_1.setPosition(p.position() + eo_prev_1)
         new_point_2.setPosition(p.position() + eo_prev_2)
 
-        e_proj = 0.5 * (eo_prev_1.dot(bisector) + eo_prev_2.dot(bisector)) / bisector.length()
-        p_proj = p.position() + e_proj * bisector.normalized()
-        w_proj_p_1 = (p_proj - p_1.position()).length()
-        w_proj_p_2 = (p_proj - p_2.position()).length()
-        w_proj_p = (p_proj - p.position()).length()
-        total_w_proj = w_proj_p_1 + w_proj_p + w_proj_p_2
-        normal_proj = (w_proj_p_1 / total_w_proj * hou.Vector3(p_1.attribValue("N"))
-                     + w_proj_p_2 / total_w_proj* hou.Vector3(p_2.attribValue("N"))
-                     + w_proj_p / total_w_proj * hou.Vector3(p.attribValue("N")))
+        get_poly(geo, [p, p_1, new_point_1])
+        get_poly(geo, [p, new_point_1, new_point_2])
+        get_poly(geo, [p, new_point_2, p_2])
 
-        w_1_p_1 = (new_point_1.position() - p_1.position()).length()
-        w_1_p = (new_point_1.position() - p.position()).length()
-        w_1_p_proj = (new_point_1.position() - p_proj).length()
-        total_w_1 = w_1_p_1 + w_1_p + w_1_p_proj
-        normal_1 = (w_1_p_1 / total_w_1 * hou.Vector3(p_1.attribValue("N"))
-                  + w_1_p / total_w_1 * hou.Vector3(p.attribValue("N"))
-                  + w_1_p_proj / total_w_1 * normal_proj)
-        new_point_1.setAttribValue("N", normal_1)
-
-        w_2_p_2 = (new_point_2.position() - p_2.position()).length()
-        w_2_p = (new_point_2.position() - p.position()).length()
-        w_2_p_proj = (new_point_2.position() - p_proj).length()
-        total_w_2 = w_2_p_2 + w_2_p + w_2_p_proj
-        normal_2 = (w_2_p_2 / total_w_2 * hou.Vector3(p_2.attribValue("N"))
-                  + w_2_p / total_w_2 * hou.Vector3(p.attribValue("N"))
-                  + w_2_p_proj / total_w_2 * normal_proj)
-        new_point_2.setAttribValue("N", normal_2)
+        get_normal(geo, new_point_1)
+        get_normal(geo, new_point_2)
         return [new_point_1, new_point_2]
     
-
-    def optimize_new_point(p, points_neighbors, new_points):
+    def correct_normal(p, points_neighbors):
       # 1. Correct the normal
       n = int((math.ceil(len(points_neighbors)/ float(10))))
       p_prev = p
@@ -624,8 +615,10 @@ for i in range(1, len(boundaries)):
       normal_c /= normal_c.length()
       p.setAttribValue("N", normal_c)
 
+    def optimize_new_point(p, points_neighbors, new_points):
       # 2. Compute the Taubin Curvature
       # NOTE: ALL_N,E elem R^3, N^T * E == N.E, so we use RHS intead
+      normal_c = hou.Vector3(p.attribValue("N"))
       p_1, p_2 = points_neighbors[p]
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
       len_ave = 0.5 * (e1.length() + e2.length())
@@ -694,7 +687,9 @@ for i in range(1, len(boundaries)):
         temp = new_points[0].position()
         new_points[0].setPosition(new_points[1].position())
         new_points[1].setPosition(temp)
-      
+      # 6. Recalculate changed vertex normals
+      for new_point in new_points:
+        get_normal(geo, new_point) 
 
     points_neighbors = defaultdict(list)
     for edge in edges:
@@ -713,19 +708,16 @@ for i in range(1, len(boundaries)):
         break
       min_angle = points_angle[p]
 
+      correct_normal(p, points_neighbors)
       points_neighbors[p_1].remove(p)
       points_neighbors[p_2].remove(p)
       if min_angle <= 75:
-        ps = [p, p_1, p_2]
-        get_poly(geo, ps)
+        get_Nsectors(p, points_neighbors, 1)
         points_neighbors[p_1].append(p_2)
         points_neighbors[p_2].append(p_1)
         optimize_new_point(p, points_neighbors, [])
       elif min_angle <= 135:
         new_point = get_Nsectors(p, points_neighbors, 2)[0]
-        ps_1, ps_2 = [p, p_1, new_point], [p, p_2, new_point]
-        get_poly(geo, ps_1)
-        get_poly(geo, ps_2)
         points_neighbors[p_1].append(new_point)
         points_neighbors[p_2].append(new_point)
         points_neighbors[new_point] = [p_1, p_2]
@@ -733,10 +725,6 @@ for i in range(1, len(boundaries)):
         optimize_new_point(p, points_neighbors, [new_point])
       else:
         new_point_1, new_point_2 = get_Nsectors(p, points_neighbors, 3)
-        ps_1, ps_2, ps_3 = [p, p_1, new_point_1], [p, new_point_1, new_point_2], [p, p_2, new_point_2]
-        get_poly(geo, ps_1)
-        get_poly(geo, ps_2)
-        get_poly(geo, ps_3)
         points_neighbors[p_1].append(new_point_1)
         points_neighbors[p_2].append(new_point_2)
         points_neighbors[new_point_1] = [p_1, new_point_2]
