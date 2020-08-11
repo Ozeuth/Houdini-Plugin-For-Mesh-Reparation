@@ -514,8 +514,28 @@ for i in range(1, len(boundaries)):
     '''
     4. Fill large hole with advancing front method
     '''
+    def clockwise_neighbors(p, points_neighbors):
+      # p_1 = left of p, p_2 = right of p
+      p_a, p_b = points_neighbors[p]
+      for prim in p.prims():
+        if prim.type() == hou.primType.Polygon:
+          ps = []
+          for v in prim.vertices():
+            ps.append(v.point())
+
+          curr_p = p_a if p_a in ps else (p_b if p_b in ps else None)
+          if curr_p != None:
+            p_i = ps.index(p)
+            ps =  ps[p_i:] + ps[:p_i]
+            assert(ps[0] == p)
+            if ps[1] == curr_p:
+              p_2 = curr_p
+            elif ps[len(ps) - 1] == curr_p:
+              p_1 = curr_p
+      return p_1, p_2
+
     def get_angle(p, points_neighbors):
-      p_1, p_2 = points_neighbors[p]
+      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
       sum_angle = 0
       for prim in p.prims():
@@ -536,7 +556,7 @@ for i in range(1, len(boundaries)):
         
     def get_Nsectors(p, points_neighbors, n):
       # n:2 = point of bisector, n:3 = points of trisector, etc
-      p_1, p_2 = points_neighbors[p]
+      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
       len_ave = 0.5 * (e1.length() + e2.length())
       # no sector, direct fill
@@ -586,11 +606,14 @@ for i in range(1, len(boundaries)):
     def correct_normal(p, points_neighbors):
       # 1. Correct the normal
       n = int((math.ceil(len(points_neighbors)/ float(10))))
-      p_prev = p
       e_dir = [np.zeros(3), np.zeros(3)]
       e_len = [0, 0]
+
+      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
+      p_currs = [p_1, p_2]
       for direction in range(2):
-        p_curr = points_neighbors[p][direction]
+        p_prev = p
+        p_curr = p_currs[direction]
         for _ in range(n):
           e_curr = p_curr.position() - p.position()
           e_dir[direction] += e_curr
@@ -605,21 +628,17 @@ for i in range(1, len(boundaries)):
 
       alpha, beta = 0.5, 0.5
       normal_i = hou.Vector3(p.attribValue("N"))
-      normal_e1 = e_dir1.cross(e_dir2) / e_dir1.cross(e_dir2).length()
-      normal_e2 = e_dir2.cross(e_dir1) / e_dir2.cross(e_dir1).length()
-      if (normal_i.angleTo(normal_e1) < normal_i.angleTo(normal_e2)):
-        normal_e = normal_e1
-      else:
-        normal_e = normal_e2
+      normal_e = e_dir1.cross(e_dir2) / e_dir1.cross(e_dir2).length()
       normal_c = alpha * normal_i + beta * normal_e
       normal_c /= normal_c.length()
+
       p.setAttribValue("N", normal_c)
 
     def optimize_new_point(p, points_neighbors, new_points):
       # 2. Compute the Taubin Curvature
       # NOTE: ALL_N,E elem R^3, N^T * E == N.E, so we use RHS intead
       normal_c = hou.Vector3(p.attribValue("N"))
-      p_1, p_2 = points_neighbors[p]
+      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
       len_ave = 0.5 * (e1.length() + e2.length())
       taubin_curvature = (normal_c.dot(e1) / math.pow(e1.length(), 2)
@@ -703,7 +722,7 @@ for i in range(1, len(boundaries)):
     i = 0
     while len(points_neighbors) >= 3:
       p = min(points_angle, key=points_angle.get)
-      p_1, p_2 = points_neighbors[p]
+      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       if i == 1:
         break
       min_angle = points_angle[p]
