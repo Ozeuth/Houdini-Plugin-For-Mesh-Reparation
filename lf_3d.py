@@ -575,7 +575,7 @@ for i in range(1, len(boundaries)):
       # trisector approximated via successive bisections, 1/3 = 1/4 + 1/16 + 1/64 + ...
       elif n == 3:
         new_point_1, new_point_2 = geo.createPoint(), geo.createPoint()
-        max_steps, epsilon = 10, 0.5
+        max_steps, epsilon = 10, 0.3
         curr_e1, curr_e2 = e1, e2
         curr_trisector = curr_e1
         for i in range(max_steps * 2):
@@ -601,7 +601,7 @@ for i in range(1, len(boundaries)):
         get_normal(geo, new_point_1)
         get_normal(geo, new_point_2)
         return [new_point_1, new_point_2]
-    
+      
     def correct_normal(p, p_1, p_2, points_neighbors):
       # 1. Correct the normal
       n = int((math.ceil(len(points_neighbors)/ float(10))))
@@ -624,7 +624,8 @@ for i in range(1, len(boundaries)):
       e_dir1 = hou.Vector3(e_dir[0] / e_len[0])
       e_dir2 = hou.Vector3(e_dir[1] / e_len[1])
 
-      alpha, beta = 0.5, 0.5
+      # Works well for F-only: alpha, beta = 0.2, 0.8
+      alpha, beta = 0.2, 0.8
       normal_i = hou.Vector3(p.attribValue("N"))
       normal_e = e_dir1.cross(e_dir2) / e_dir1.cross(e_dir2).length()
       normal_c = (alpha * normal_i + beta * normal_e).normalized()
@@ -644,7 +645,8 @@ for i in range(1, len(boundaries)):
         w1, w2 = 0.5, 0.5
         A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
         # 3_1: Rotate normal_c by phi around ns, plane normal of nc and eo_prev, to get eo_new
-        if abs(A) <= 0:
+        print("A: " + str(abs(A)))
+        if abs(A) <= 1:
           phi = math.acos(A)
           normal_s = normal_c.cross(eo_prev) / (normal_c.cross(eo_prev)).length()
           #3_1a. Transform the scene so that the z-axis is aligned with normal_s
@@ -663,6 +665,8 @@ for i in range(1, len(boundaries)):
                                     0, normal_s[1]/d, v/d, 0, 
                                     0, 0, 0, 1)) 
           #3_1b. Carry out a rotation about the z-axis by phi
+          # NOTE: I'm not sure why, but a clockwise rotation seems better!
+          phi = math.radians(360 - math.degrees(phi))
           rotation_z = hou.Matrix4((math.cos(phi), -1 * math.sin(phi), 0, 0,
                                     math.sin(phi), math.cos(phi), 0, 0,
                                     0, 0, 1, 0,
@@ -696,12 +700,7 @@ for i in range(1, len(boundaries)):
           eo_new = eo_new.normalized() * len_ave
         # 4. Calculate optimal new_point
         new_point.setPosition(p.position() + eo_new)
-      # 5. Swap trisector vertex position
-      if len(new_points) == 2 and abs(A) <= 0:
-        temp = new_points[0].position()
-        new_points[0].setPosition(new_points[1].position())
-        new_points[1].setPosition(temp)
-      # 6. Recalculate changed vertex normals
+      # 5. Recalculate changed vertex normals
       for new_point in new_points:
         get_normal(geo, new_point)
 
