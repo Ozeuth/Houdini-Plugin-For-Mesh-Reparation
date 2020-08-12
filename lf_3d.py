@@ -535,7 +535,7 @@ for i in range(1, len(boundaries)):
       return p_1, p_2
 
     def get_angle(p, points_neighbors):
-      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
+      p_1, p_2 = points_neighbors[p]
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
       sum_angle = 0
       for prim in p.prims():
@@ -554,9 +554,8 @@ for i in range(1, len(boundaries)):
       else:
         return e1.angleTo(e2)
         
-    def get_Nsectors(p, points_neighbors, n):
+    def get_Nsectors(p, p_1, p_2, n):
       # n:2 = point of bisector, n:3 = points of trisector, etc
-      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
       len_ave = 0.5 * (e1.length() + e2.length())
       # no sector, direct fill
@@ -572,6 +571,7 @@ for i in range(1, len(boundaries)):
         get_poly(geo, [p, new_point, p_2])
         
         get_normal(geo, new_point)
+        print(str(p.number()) + " created: " + str(new_point.number()))
         return [new_point]
       # trisector approximated via successive bisections, 1/3 = 1/4 + 1/16 + 1/64 + ...
       elif n == 3:
@@ -601,15 +601,16 @@ for i in range(1, len(boundaries)):
 
         get_normal(geo, new_point_1)
         get_normal(geo, new_point_2)
+        print(str(p.number()) + " created: " + str(new_point_1.number()))
+        print(str(p.number()) + " created: " + str(new_point_2.number()))
         return [new_point_1, new_point_2]
     
-    def correct_normal(p, points_neighbors):
+    def correct_normal(p, p_1, p_2, points_neighbors):
       # 1. Correct the normal
       n = int((math.ceil(len(points_neighbors)/ float(10))))
       e_dir = [np.zeros(3), np.zeros(3)]
       e_len = [0, 0]
 
-      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       p_currs = [p_1, p_2]
       for direction in range(2):
         p_prev = p
@@ -619,8 +620,8 @@ for i in range(1, len(boundaries)):
           e_dir[direction] += e_curr
           e_len[direction] += e_curr.length()
 
-          p_1, p_2 = points_neighbors[p_curr]
-          p_next = p_2 if p_1 == p_prev else p_1
+          p_a, p_b = points_neighbors[p_curr]
+          p_next = p_b if p_a == p_prev else p_a
           p_prev = p_curr
           p_curr = p_next
       e_dir1 = hou.Vector3(e_dir[0] / e_len[0])
@@ -629,16 +630,13 @@ for i in range(1, len(boundaries)):
       alpha, beta = 0.5, 0.5
       normal_i = hou.Vector3(p.attribValue("N"))
       normal_e = e_dir1.cross(e_dir2) / e_dir1.cross(e_dir2).length()
-      normal_c = alpha * normal_i + beta * normal_e
-      normal_c /= normal_c.length()
-
+      normal_c = (alpha * normal_i + beta * normal_e).normalized()
       p.setAttribValue("N", normal_c)
 
-    def optimize_new_point(p, points_neighbors, new_points):
+    def optimize_new_point(p, p_1, p_2, new_points):
       # 2. Compute the Taubin Curvature
       # NOTE: ALL_N,E elem R^3, N^T * E == N.E, so we use RHS intead
       normal_c = hou.Vector3(p.attribValue("N"))
-      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
       len_ave = 0.5 * (e1.length() + e2.length())
       taubin_curvature = (normal_c.dot(e1) / math.pow(e1.length(), 2)
@@ -646,15 +644,15 @@ for i in range(1, len(boundaries)):
       # 3. Solve for eo_new, through rotating normal_c, or by minimizing F(eo_new)
       for new_point in new_points:
         eo_prev = new_point.position() - p.position()
-        w1, w2 = 0.8, 0.2
+        w1, w2 = 0.75, 0.25
         A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
-        print("comp1: " + str(len_ave * taubin_curvature))
-        print("comp2: " + str(normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)))
+        #print("comp1: " + str(len_ave * taubin_curvature))
+        #print("comp2: " + str(normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)))
         print("A: " + str(A))
         # 3_1: Rotate normal_c by phi around ns, plane normal of nc and eo_prev, to get eo_new
         if abs(A) <= 1:
           phi = math.acos(A)
-          print("phi: " + str(math.degrees(phi)))
+          #print("phi: " + str(math.degrees(phi)))
           normal_s = normal_c.cross(eo_prev) / (normal_c.cross(eo_prev)).length()
           #3_1a. Transform the scene so that the z-axis is aligned with normal_s
           translation = hou.Matrix4((1, 0, 0, p.position()[0],
@@ -710,7 +708,7 @@ for i in range(1, len(boundaries)):
         new_points[1].setPosition(temp)
       # 6. Recalculate changed vertex normals
       for new_point in new_points:
-        get_normal(geo, new_point) 
+        get_normal(geo, new_point)
 
     points_neighbors = defaultdict(list)
     for edge in edges:
@@ -723,41 +721,43 @@ for i in range(1, len(boundaries)):
 
     i = 0
     while len(points_neighbors) >= 3:
-      p = min(points_angle, key=points_angle.get)
-      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       if i == 1:
         break
-      min_angle = points_angle[p]
+      print("iter: " + str(i) + " remaining: " + str(len(points_neighbors)))
 
-      correct_normal(p, points_neighbors)
+      p = min(points_angle, key=points_angle.get)
+      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
+      print((p.number(), p_1.number(), p_2.number()))
+      min_angle = points_angle[p]
+      
+      correct_normal(p, p_1, p_2, points_neighbors)
       points_neighbors[p_1].remove(p)
       points_neighbors[p_2].remove(p)
       if min_angle <= 75:
-        get_Nsectors(p, points_neighbors, 1)
+        get_Nsectors(p, p_1, p_2, 1)
         points_neighbors[p_1].append(p_2)
         points_neighbors[p_2].append(p_1)
-        optimize_new_point(p, points_neighbors, [])
+        optimize_new_point(p, p_1, p_2, [])
       elif min_angle <= 135:
-        new_point = get_Nsectors(p, points_neighbors, 2)[0]
+        new_point = get_Nsectors(p, p_1, p_2, 2)[0]
         points_neighbors[p_1].append(new_point)
         points_neighbors[p_2].append(new_point)
         points_neighbors[new_point] = [p_1, p_2]
+        optimize_new_point(p, p_1, p_2, [new_point])
         points_angle[new_point] = get_angle(new_point, points_neighbors)
-        optimize_new_point(p, points_neighbors, [new_point])
       else:
-        new_point_1, new_point_2 = get_Nsectors(p, points_neighbors, 3)
+        new_point_1, new_point_2 = get_Nsectors(p, p_1, p_2, 3)
         points_neighbors[p_1].append(new_point_1)
         points_neighbors[p_2].append(new_point_2)
         points_neighbors[new_point_1] = [p_1, new_point_2]
         points_neighbors[new_point_2] = [new_point_1, p_2]
+        optimize_new_point(p, p_1, p_2, [new_point_1, new_point_2])
         points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
         points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
-        optimize_new_point(p, points_neighbors, [new_point_1, new_point_2])
       points_angle[p_1] = get_angle(p_1, points_neighbors)
       points_angle[p_2] = get_angle(p_2, points_neighbors)
       del points_angle[p]
       del points_neighbors[p]
-      print(i, len(points_neighbors))
       i += 1
     #get_poly(geo, points_neighbors.keys())
 
