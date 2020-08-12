@@ -3,6 +3,7 @@ import itertools
 import math
 import numpy as np
 import operator
+import random
 import copy
 from collections import defaultdict
 
@@ -624,7 +625,6 @@ for i in range(1, len(boundaries)):
       e_dir1 = hou.Vector3(e_dir[0] / e_len[0])
       e_dir2 = hou.Vector3(e_dir[1] / e_len[1])
 
-      # Works well for F-only: alpha, beta = 0.2, 0.8
       alpha, beta = 0.2, 0.8
       normal_i = hou.Vector3(p.attribValue("N"))
       normal_e = e_dir1.cross(e_dir2) / e_dir1.cross(e_dir2).length()
@@ -714,14 +714,26 @@ for i in range(1, len(boundaries)):
       points_angle[p] = get_angle(p, points_neighbors)
 
     i = 0
+    angle_threshold = 140
     while len(points_neighbors) >= 3:
       if i == 1:
         break
       print("iter: " + str(i) + " remaining: " + str(len(points_neighbors)))
 
       p = min(points_angle, key=points_angle.get)
-      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       min_angle = points_angle[p]
+      # 0. Weighted Roulette, choose any point with angle < threshold. Lets more borders contribute to AFT
+      # NOTE: Disable to remove randomness
+      if min_angle <= angle_threshold:
+        p_roulette = []
+        for p_ in points_angle:
+          point_angle = points_angle[p_]
+          if point_angle <= angle_threshold:
+            p_roulette += [p_] * int(angle_threshold - point_angle + 1)
+        p = random.choice(p_roulette)
+        min_angle = points_angle[p]
+
+      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
       
       normal_c = correct_normal(p, p_1, p_2, points_neighbors)
       points_neighbors[p_1].remove(p)
