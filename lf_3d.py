@@ -59,8 +59,13 @@ def get_normal(geo, p):
       ws.append(w)
       ns.append(n)
   normal = hou.Vector3(0, 0, 0)
-  for w, n in zip(ws, ns):
-    normal += w / total_w * n
+  try:
+    for w, n in zip(ws, ns):
+      normal += w / total_w * n
+  except:
+    for w, n in zip(ws, ns):
+      normal += w * n
+    normal = normal.normalized()
   p.setAttribValue("N", normal)
   return normal
 
@@ -559,20 +564,22 @@ for i in range(1, len(boundaries)):
       # n:2 = point of bisector, n:3 = points of trisector, etc
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
       len_ave = 0.5 * (e1.length() + e2.length())
+      e1, e2 = e1.normalized(), e2.normalized()
       # no sector, direct fill
       if n == 1:
-        get_poly(geo, [p, p_1, p_2])
+        new_poly = get_poly(geo, [p, p_1, p_2])
+        return ([], [new_poly])
       # bisector computed using angle bisector theorem
       elif n == 2:
         new_point = geo.createPoint()
         eo_prev = len_ave * (e2.length() * e1 + e1.length() * e2).normalized()
         new_point.setPosition(p.position() + eo_prev)
 
-        get_poly(geo, [p, p_1, new_point])
-        get_poly(geo, [p, new_point, p_2])
+        new_poly_1 = get_poly(geo, [p, p_1, new_point])
+        new_poly_2 = get_poly(geo, [p, new_point, p_2])
         
         get_normal(geo, new_point)
-        return [new_point]
+        return ([new_point], [new_poly_1, new_poly_2])
       # trisector approximated via successive bisections, 1/3 = 1/4 + 1/16 + 1/64 + ...
       elif n == 3:
         new_point_1, new_point_2 = geo.createPoint(), geo.createPoint()
@@ -595,13 +602,13 @@ for i in range(1, len(boundaries)):
         new_point_1.setPosition(p.position() + eo_prev_1)
         new_point_2.setPosition(p.position() + eo_prev_2)
 
-        get_poly(geo, [p, p_1, new_point_1])
-        get_poly(geo, [p, new_point_1, new_point_2])
-        get_poly(geo, [p, new_point_2, p_2])
+        new_poly_1 = get_poly(geo, [p, p_1, new_point_1])
+        new_poly_2 = get_poly(geo, [p, new_point_1, new_point_2])
+        new_poly_3 = get_poly(geo, [p, new_point_2, p_2])
 
         get_normal(geo, new_point_1)
         get_normal(geo, new_point_2)
-        return [new_point_1, new_point_2]
+        return ([new_point_1, new_point_2], [new_poly_1, new_poly_2, new_poly_3])
       
     def correct_normal(p, p_1, p_2, points_neighbors):
       # 1. Correct the normal
@@ -645,7 +652,7 @@ for i in range(1, len(boundaries)):
         w1, w2 = 0.5, 0.5
         A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
         # 3_1: Rotate normal_c by phi around ns, plane normal of nc and eo_prev, to get eo_new
-        print("A: " + str(abs(A)))
+        #print("A: " + str(abs(A)))
         if abs(A) <= 1:
           phi = math.acos(A)
           normal_s = normal_c.cross(eo_prev) / (normal_c.cross(eo_prev)).length()
@@ -713,57 +720,128 @@ for i in range(1, len(boundaries)):
     for p in points_neighbors:
       points_angle[p] = get_angle(p, points_neighbors)
 
-    i = 0
     angle_threshold = 140
-    while len(points_neighbors) >= 3:
-      if i == 1:
-        break
-      print("iter: " + str(i) + " remaining: " + str(len(points_neighbors)))
-
-      p = min(points_angle, key=points_angle.get)
-      min_angle = points_angle[p]
-      # 0. Weighted Roulette, choose any point with angle < threshold. Lets more borders contribute to AFT
-      # NOTE: Disable to remove randomness
-      if min_angle <= angle_threshold:
-        p_roulette = []
-        for p_ in points_angle:
-          point_angle = points_angle[p_]
-          if point_angle <= angle_threshold:
-            p_roulette += [p_] * int(angle_threshold - point_angle + 1)
-        p = random.choice(p_roulette)
+    emergency_stop = False
+    points_loops, angle_loops = [points_neighbors], [points_angle]
+    while len(points_loops) > 0 and not emergency_stop:
+      points_neighbors, points_angle = points_loops[0], angle_loops[0]
+      i = 0
+      while len(points_neighbors) >= 3:
+        #print("iter: " + str(i) + " remaining: " + str(len(points_neighbors)))
+        if i > 1000:
+          emergency_stop = True
+          break
+        p = min(points_angle, key=points_angle.get)
         min_angle = points_angle[p]
-
-      p_1, p_2 = clockwise_neighbors(p, points_neighbors)
-      
-      normal_c = correct_normal(p, p_1, p_2, points_neighbors)
-      points_neighbors[p_1].remove(p)
-      points_neighbors[p_2].remove(p)
-      if min_angle <= 75:
-        get_Nsectors(p, p_1, p_2, 1)
-        points_neighbors[p_1].append(p_2)
-        points_neighbors[p_2].append(p_1)
-        optimize_new_point(p, p_1, p_2, [], normal_c)
-      elif min_angle <= 135:
-        new_point = get_Nsectors(p, p_1, p_2, 2)[0]
-        points_neighbors[p_1].append(new_point)
-        points_neighbors[p_2].append(new_point)
-        points_neighbors[new_point] = [p_1, p_2]
-        optimize_new_point(p, p_1, p_2, [new_point], normal_c)
-        points_angle[new_point] = get_angle(new_point, points_neighbors)
-      else:
-        new_point_1, new_point_2 = get_Nsectors(p, p_1, p_2, 3)
-        points_neighbors[p_1].append(new_point_1)
-        points_neighbors[p_2].append(new_point_2)
-        points_neighbors[new_point_1] = [p_1, new_point_2]
-        points_neighbors[new_point_2] = [new_point_1, p_2]
-        optimize_new_point(p, p_1, p_2, [new_point_1, new_point_2], normal_c)
-        points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
-        points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
-      points_angle[p_1] = get_angle(p_1, points_neighbors)
-      points_angle[p_2] = get_angle(p_2, points_neighbors)
-      del points_angle[p]
-      del points_neighbors[p]
-      i += 1
-    #get_poly(geo, points_neighbors.keys())
+        # 0. Weighted Roulette, choose any point with angle < threshold. Lets more borders contribute to AFT
+        # NOTE: Disable to remove randomness        
+        if min_angle <= angle_threshold:
+          p_roulette = []
+          for p_ in points_angle:
+            point_angle = points_angle[p_]
+            if point_angle <= angle_threshold:
+              p_roulette += [p_] * int(angle_threshold - point_angle + 1)
+          p = random.choice(p_roulette)
+          min_angle = points_angle[p]
+        
+        p_1, p_2 = clockwise_neighbors(p, points_neighbors)  
+        normal_c = correct_normal(p, p_1, p_2, points_neighbors)
+        #print("Select " + str(p.number()) + " min: " + str(min_angle) + " ns: " + str((p_1.number(), p_2.number())))
+        if min_angle <= 75:
+          points_neighbors[p_1].remove(p)
+          points_neighbors[p_2].remove(p)
+          get_Nsectors(p, p_1, p_2, 1)
+          optimize_new_point(p, p_1, p_2, [], normal_c)
+          points_neighbors[p_1].append(p_2)
+          points_neighbors[p_2].append(p_1)
+          points_angle[p_1] = get_angle(p_1, points_neighbors)
+          points_angle[p_2] = get_angle(p_2, points_neighbors)
+        elif min_angle <= 135:
+          new_points, new_polys = get_Nsectors(p, p_1, p_2, 2)
+          new_point = new_points[0]
+          optimize_new_point(p, p_1, p_2, [new_point], normal_c)
+          p_threshold = 0.5 * (new_point.position() - p.position()).length()
+          is_merged = False
+          for p_ in points_neighbors:
+            distance = (p_.position() - new_point.position()).length()
+            if distance < p_threshold and not p_ in [p, p_1, p_2]:
+              geo.deletePoints(new_points)
+              geo.deletePrims(new_polys)
+              new_point, is_merged = p_, True
+              break 
+          if is_merged:
+            p_a, p_b = clockwise_neighbors(new_point, points_neighbors)
+            points_neighbors[p_1].remove(p)
+            points_neighbors[p_2].remove(p)
+            get_poly(geo, [p, new_point, p_2])
+            get_poly(geo, [new_point, p, p_1])
+            if p_a == p_2:
+              points_neighbors[new_point] = [p_1, p_b]
+              points_neighbors[p_1].append(new_point)
+              del points_neighbors[p_2]
+              del points_angle[p_2]
+              points_angle[new_point] = get_angle(new_point, points_neighbors)
+              points_angle[p_1] = get_angle(p_1, points_neighbors)
+            elif p_b == p_1:
+              points_neighbors[new_point] = [p_a, p_2]
+              points_neighbors[p_2].append(new_point)
+              del points_neighbors[p_1]
+              del points_angle[p_1]
+              points_angle[new_point] = get_angle(new_point, points_neighbors)
+              points_angle[p_2] = get_angle(p_2, points_neighbors)
+            else:
+              # Two sub-holes. Compute AFT individually
+              p_loops = [(p_a, p_2), (p_1, p_b)]
+              points_neighbors[p_1] = points_neighbors[p_1] + [new_point]
+              points_neighbors[p_2] = points_neighbors[p_2] + [new_point]
+              points_angle[p_1] = get_angle(p_1, points_neighbors)
+              points_angle[p_2] = get_angle(p_2, points_neighbors)
+              for p_loop in p_loops:
+                points_neighbors_loop = defaultdict(list)
+                points_angle_loop = defaultdict(list)
+                p_prev = new_point
+                p_curr = p_loop[0]
+                while p_curr != new_point:
+                  p__a, p__b = points_neighbors[p_curr]
+                  points_neighbors_loop[p_curr] = [p__a, p__b]
+                  points_angle_loop[p_curr] = points_angle[p_curr]
+                  p_next = p__b if p__a == p_prev else p__a
+                  p_prev = p_curr
+                  p_curr = p_next
+                points_neighbors_loop[new_point] = [p_loop[0], p_loop[1]]
+                points_angle_loop[new_point] = get_angle(new_point, points_neighbors_loop)
+                points_loops.append(points_neighbors_loop)
+                angle_loops.append(points_angle_loop)
+              break
+          else:
+            points_neighbors[p_1].remove(p)
+            points_neighbors[p_2].remove(p)
+            points_neighbors[new_point] = [p_1, p_2]
+            points_neighbors[p_1].append(new_point)
+            points_neighbors[p_2].append(new_point)
+            points_angle[new_point] = get_angle(new_point, points_neighbors)
+            points_angle[p_1] = get_angle(p_1, points_neighbors)
+            points_angle[p_2] = get_angle(p_2, points_neighbors)
+        else:
+          points_neighbors[p_1].remove(p)
+          points_neighbors[p_2].remove(p)
+          new_points, new_polys = get_Nsectors(p, p_1, p_2, 3)
+          new_point_1, new_point_2 = new_points
+          optimize_new_point(p, p_1, p_2, [new_point_1, new_point_2], normal_c)
+          points_neighbors[p_1].append(new_point_1)
+          points_neighbors[p_2].append(new_point_2)
+          points_neighbors[new_point_1] = [p_1, new_point_2]
+          points_neighbors[new_point_2] = [new_point_1, p_2]
+          points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
+          points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
+          points_angle[p_1] = get_angle(p_1, points_neighbors)
+          points_angle[p_2] = get_angle(p_2, points_neighbors)
+        del points_angle[p]
+        del points_neighbors[p]
+        i += 1
+      if len(points_neighbors) == 3:
+        get_poly(geo, points_neighbors.keys())
+      points_loops.remove(points_neighbors)
+      angle_loops.remove(points_angle)
 
 node.bypass(True)
