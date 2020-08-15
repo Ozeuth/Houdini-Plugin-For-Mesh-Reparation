@@ -653,7 +653,7 @@ for i in range(1, len(boundaries)):
         A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
         # 3_1: Rotate normal_c by phi around ns, plane normal of nc and eo_prev, to get eo_new
         #print("A: " + str(abs(A)))
-        if abs(A) <= 1:
+        if abs(A) <= 0:
           phi = math.acos(A)
           normal_s = normal_c.cross(eo_prev) / (normal_c.cross(eo_prev)).length()
           #3_1a. Transform the scene so that the z-axis is aligned with normal_s
@@ -720,9 +720,10 @@ for i in range(1, len(boundaries)):
     for p in points_neighbors:
       points_angle[p] = get_angle(p, points_neighbors)
 
-    angle_threshold = 140
+    angle_threshold, p_factor_threshold = 140, 0.8
     emergency_stop = False
     points_loops, angle_loops = [points_neighbors], [points_angle]
+    marked_for_deletion = []
     while len(points_loops) > 0 and not emergency_stop:
       points_neighbors, points_angle = points_loops[0], angle_loops[0]
       i = 0
@@ -734,7 +735,7 @@ for i in range(1, len(boundaries)):
         p = min(points_angle, key=points_angle.get)
         min_angle = points_angle[p]
         # 0. Weighted Roulette, choose any point with angle < threshold. Lets more borders contribute to AFT
-        # NOTE: Disable to remove randomness        
+        # NOTE: Disable to remove randomness
         if min_angle <= angle_threshold:
           p_roulette = []
           for p_ in points_angle:
@@ -746,7 +747,7 @@ for i in range(1, len(boundaries)):
         
         p_1, p_2 = clockwise_neighbors(p, points_neighbors)  
         normal_c = correct_normal(p, p_1, p_2, points_neighbors)
-        #print("Select " + str(p.number()) + " min: " + str(min_angle) + " ns: " + str((p_1.number(), p_2.number())))
+
         if min_angle <= 75:
           points_neighbors[p_1].remove(p)
           points_neighbors[p_2].remove(p)
@@ -760,16 +761,17 @@ for i in range(1, len(boundaries)):
           new_points, new_polys = get_Nsectors(p, p_1, p_2, 2)
           new_point = new_points[0]
           optimize_new_point(p, p_1, p_2, [new_point], normal_c)
-          p_threshold = 0.5 * (new_point.position() - p.position()).length()
+          p_threshold = p_factor_threshold * (new_point.position() - p.position()).length()
           is_merged = False
           for p_ in points_neighbors:
             distance = (p_.position() - new_point.position()).length()
             if distance < p_threshold and not p_ in [p, p_1, p_2]:
-              geo.deletePoints(new_points)
-              geo.deletePrims(new_polys)
+              marked_for_deletion.extend(new_points)
+              geo.deletePrims(new_polys, keep_points=True)
               new_point, is_merged = p_, True
               break 
           if is_merged:
+            print("merge")
             p_a, p_b = clockwise_neighbors(new_point, points_neighbors)
             points_neighbors[p_1].remove(p)
             points_neighbors[p_2].remove(p)
@@ -792,8 +794,8 @@ for i in range(1, len(boundaries)):
             else:
               # Two sub-holes. Compute AFT individually
               p_loops = [(p_a, p_2), (p_1, p_b)]
-              points_neighbors[p_1] = points_neighbors[p_1] + [new_point]
-              points_neighbors[p_2] = points_neighbors[p_2] + [new_point]
+              points_neighbors[p_1].append(new_point)
+              points_neighbors[p_2].append(new_point)
               points_angle[p_1] = get_angle(p_1, points_neighbors)
               points_angle[p_2] = get_angle(p_2, points_neighbors)
               for p_loop in p_loops:
@@ -823,19 +825,141 @@ for i in range(1, len(boundaries)):
             points_angle[p_1] = get_angle(p_1, points_neighbors)
             points_angle[p_2] = get_angle(p_2, points_neighbors)
         else:
-          points_neighbors[p_1].remove(p)
-          points_neighbors[p_2].remove(p)
           new_points, new_polys = get_Nsectors(p, p_1, p_2, 3)
           new_point_1, new_point_2 = new_points
           optimize_new_point(p, p_1, p_2, [new_point_1, new_point_2], normal_c)
-          points_neighbors[p_1].append(new_point_1)
-          points_neighbors[p_2].append(new_point_2)
-          points_neighbors[new_point_1] = [p_1, new_point_2]
-          points_neighbors[new_point_2] = [new_point_1, p_2]
-          points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
-          points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
-          points_angle[p_1] = get_angle(p_1, points_neighbors)
-          points_angle[p_2] = get_angle(p_2, points_neighbors)
+
+          p_threshold_1 = p_factor_threshold * (new_point_1.position() - p.position()).length()
+          p_threshold_2 = p_factor_threshold * (new_point_2.position() - p.position()).length()
+          is_merged_1, is_merged_2, new_point_1_, new_point_2_ = False, False, None, None
+          points_to_delete, polys_to_delete = [], []
+          for p_ in points_neighbors:
+            distance_1 = (p_.position() - new_point_1.position()).length()
+            distance_2 = (p_.position() - new_point_2.position()).length()
+            if distance_1 < p_threshold_1 and not p_ in [p, p_1, p_2, new_point_2] and not is_merged_1:
+              for new_poly in new_polys:
+                if new_point_1 in new_poly.points():
+                  polys_to_delete.append(new_poly)
+              points_to_delete.append(new_point_1)
+              new_point_1_, is_merged_1 = p_, True
+            if distance_2 < p_threshold_2 and not p_ in [p, p_1, p_2, new_point_1] and not is_merged_2:
+              for new_poly in new_polys:
+                if new_point_2 in new_poly.points():
+                  polys_to_delete.append(new_poly)
+              points_to_delete.append(new_point_2)
+              new_point_2_, is_merged_2 = p_, True
+            if is_merged_1 and is_merged_2:
+              break
+          polys_to_delete = np.unique(np.array(polys_to_delete))
+          marked_for_deletion.extend(points_to_delete)
+          geo.deletePrims(polys_to_delete, keep_points=True)
+          new_point_1 = new_point_1_ if new_point_1_ != None else new_point_1
+          new_point_2 = new_point_2_ if new_point_2_ != None else new_point_2
+
+          if is_merged_1 and not is_merged_2:
+            p_a, p_b = clockwise_neighbors(new_point_1, points_neighbors) 
+            points_neighbors[p_1].remove(p)
+            points_neighbors[p_2].remove(p)
+            get_poly(geo, [new_point_1, p, p_1])
+            get_poly(geo, [new_point_1, new_point_2, p])
+            if p_1 == p_b:
+              print("case 1A")
+              points_neighbors[new_point_1] = [p_a, new_point_2]
+              points_neighbors[new_point_2] = [new_point_1, p_2]
+              points_neighbors[p_2].append(new_point_2)
+              del points_neighbors[p_1]
+              del points_angle[p_1]
+              points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
+              points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
+              points_angle[p_2] = get_angle(p_2, points_neighbors)
+            else:
+              print("case 1B")
+              # Two sub-holes. Compute AFT individually
+              p_loops = [(p_a, new_point_2), (p_1, p_b)]
+              points_neighbors[p_1].append(new_point_1)
+              points_neighbors[p_2].append(new_point_2)
+              points_neighbors[new_point_2] = [new_point_1, p_2]
+              points_angle[p_1] = get_angle(p_1, points_neighbors)
+              points_angle[p_2] = get_angle(p_2, points_neighbors)
+              points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
+              for p_loop in p_loops:
+                points_neighbors_loop = defaultdict(list)
+                points_angle_loop = defaultdict(list)
+                p_prev = new_point_1
+                p_curr = p_loop[0]
+                while p_curr != new_point_1:
+                  p__a, p__b = points_neighbors[p_curr]
+                  points_neighbors_loop[p_curr] = [p__a, p__b]
+                  points_angle_loop[p_curr] = points_angle[p_curr]
+                  p_next = p__b if p__a == p_prev else p__a
+                  p_prev = p_curr
+                  p_curr = p_next
+                points_neighbors_loop[new_point_1] = [p_loop[0], p_loop[1]]
+                points_angle_loop[new_point_1] = get_angle(new_point_1, points_neighbors_loop)
+                points_loops.append(points_neighbors_loop)
+                angle_loops.append(points_angle_loop)
+              break
+          elif is_merged_2 and not is_merged_1:
+            p_a, p_b = clockwise_neighbors(new_point_2, points_neighbors)
+            points_neighbors[p_1].remove(p)
+            points_neighbors[p_2].remove(p)
+            get_poly(geo, [new_point_2, p_2, p])
+            get_poly(geo, [new_point_1, new_point_2, p])
+            if p_2 == p_a:
+              print("case 2A")
+              points_neighbors[new_point_1] = [p_1, new_point_2]
+              points_neighbors[new_point_2] = [new_point_1, p_b]
+              points_neighbors[p_1].append(new_point_1)
+              del points_neighbors[p_2]
+              del points_angle[p_2]
+              points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
+              points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
+              points_angle[p_1] = get_angle(p_1, points_neighbors)          
+            else:
+              print("case 2B")
+              # Two sub-holes. Compute AFT individually
+              p_loops = [(p_a, p_2), (new_point_1, p_b)]
+              points_neighbors[p_1].append(new_point_1)
+              points_neighbors[p_2].append(new_point_2)
+              points_neighbors[new_point_1] = [p_1, new_point_2]
+              points_angle[p_1] = get_angle(p_1, points_neighbors)
+              points_angle[p_2] = get_angle(p_2, points_neighbors)
+              points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
+              for p_loop in p_loops:
+                points_neighbors_loop = defaultdict(list)
+                points_angle_loop = defaultdict(list)
+                p_prev = new_point_2
+                p_curr = p_loop[0]
+                while p_curr != new_point_2:
+                  p__a, p__b = points_neighbors[p_curr]
+                  points_neighbors_loop[p_curr] = [p__a, p__b]
+                  points_angle_loop[p_curr] = points_angle[p_curr]
+                  p_next = p__b if p__a == p_prev else p__a
+                  p_prev = p_curr
+                  p_curr = p_next
+                points_neighbors_loop[new_point_2] = [p_loop[0], p_loop[1]]
+                points_angle_loop[new_point_2] = get_angle(new_point_2, points_neighbors_loop)
+                points_loops.append(points_neighbors_loop)
+                angle_loops.append(points_angle_loop)
+              break
+          elif is_merged_1 and is_merged_2:
+            print("case 3")
+            points_neighbors[p_1].remove(p)
+            points_neighbors[p_2].remove(p)
+            emergency_stop = True
+            print("break")
+            break
+          else:
+            points_neighbors[p_1].remove(p)
+            points_neighbors[p_2].remove(p)      
+            points_neighbors[p_1].append(new_point_1)
+            points_neighbors[p_2].append(new_point_2)
+            points_neighbors[new_point_1] = [p_1, new_point_2]
+            points_neighbors[new_point_2] = [new_point_1, p_2]
+            points_angle[new_point_1] = get_angle(new_point_1, points_neighbors)
+            points_angle[new_point_2] = get_angle(new_point_2, points_neighbors)
+            points_angle[p_1] = get_angle(p_1, points_neighbors)
+            points_angle[p_2] = get_angle(p_2, points_neighbors)
         del points_angle[p]
         del points_neighbors[p]
         i += 1
@@ -843,5 +967,7 @@ for i in range(1, len(boundaries)):
         get_poly(geo, points_neighbors.keys())
       points_loops.remove(points_neighbors)
       angle_loops.remove(points_angle)
+
+    geo.deletePoints(marked_for_deletion)
 
 node.bypass(True)
