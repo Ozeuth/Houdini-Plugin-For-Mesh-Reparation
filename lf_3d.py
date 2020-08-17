@@ -804,9 +804,9 @@ for i in range(1, len(boundaries)):
       points_angle[p] = get_angle(p, points_neighbors)
 
     emergency_stop = False
-    is_iter_threshold, iter_threshold = True, 1000
+    is_iter_threshold, iter_threshold = True, 2000
     is_angle_threshold, angle_threshold = True, 140
-    is_point_threshold, point_threshold = True, 0.8
+    is_point_threshold, point_threshold = True, 0.75
 
     marked_for_deletion = []
     points_loops, angle_loops = [points_neighbors], [points_angle]
@@ -814,6 +814,7 @@ for i in range(1, len(boundaries)):
       points_neighbors, points_angle = points_loops[0], angle_loops[0]
       i = 0
       while len(points_neighbors) >= 3:
+        # print("iter: " + str(i) + " remaining: " + str(len(points_neighbors)))
         if is_iter_threshold and i > iter_threshold:
           emergency_stop = True
           break
@@ -845,7 +846,6 @@ for i in range(1, len(boundaries)):
           otherwise:         fill with two points, three triangles, along trisector
 
         4D. Optimize new points
-        
         4E. Point Distance Thresholding
           merge points along boundary that are within point_threshold of one another
         '''
@@ -896,7 +896,6 @@ for i in range(1, len(boundaries)):
           new_points, new_polys = get_Nsectors(p, p_1, p_2, 3)
           new_point_1, new_point_2 = new_points
           optimize_new_point(p, p_1, p_2, [new_point_1, new_point_2], normal_c)
-
           is_merged_1, is_merged_2 = False, False
           if is_point_threshold:
             p_threshold_1 = point_threshold * (new_point_1.position() - p.position()).length()
