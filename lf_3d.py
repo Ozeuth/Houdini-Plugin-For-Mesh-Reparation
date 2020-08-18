@@ -69,7 +69,7 @@ def get_normal(geo, p):
   p.setAttribValue("N", normal)
   return normal
 
-# NOTE: Houdini 2020 does not support scipy. Special thanks to François Chollet for his np-only minimizer implementation
+# NOTE: Houdini 2020 does not support scipy, using FC's np-only minimizer
 def minimize(f, x_start,
             step=0.1, no_improve_thr=10e-6,
             no_improv_break=10, max_iter=0,
@@ -99,7 +99,6 @@ def minimize(f, x_start,
         iters += 1
 
         # break after no_improv_break iterations with no improvement
-        #print('...best so far:' + str(best))
         if best < prev_best - no_improve_thr:
             no_improv = 0
             prev_best = best
@@ -631,9 +630,10 @@ for i in range(1, len(boundaries)):
       e_dir1 = hou.Vector3(e_dir[0] / e_len[0])
       e_dir2 = hou.Vector3(e_dir[1] / e_len[1])
 
-      alpha, beta = 0.2, 0.8
+      alpha, beta = 0.9, 0.1
       normal_i = hou.Vector3(p.attribValue("N"))
-      normal_e = e_dir1.cross(e_dir2) / e_dir1.cross(e_dir2).length()
+      # NOTE: Paper says e1 x e2 / ||e1 x e2||, but e2 x e1 / ||e2 x e1|| makes sense
+      normal_e = e_dir2.cross(e_dir1).normalized()
       normal_c = (alpha * normal_i + beta * normal_e).normalized()
 
       return normal_c
@@ -645,65 +645,16 @@ for i in range(1, len(boundaries)):
       len_ave = 0.5 * (e1.length() + e2.length())
       taubin_curvature = (normal_c.dot(e1) / math.pow(e1.length(), 2)
                          + normal_c.dot(e2) / math.pow(e2.length(), 2))
-      # 2. Solve for eo_new, through rotating normal_c, or by minimizing F(eo_new)
+      # 2. Solve for eo_new, through minimizing F(eo_new)
       for new_point in new_points:
         eo_prev = new_point.position() - p.position()
         w1, w2 = 0.5, 0.5
-        A = w1 * len_ave * taubin_curvature + w2 * normal_c.dot(eo_prev) / math.pow(eo_prev.length(), 2)
-        # 2_1: Rotate normal_c by phi around ns, plane normal of nc and eo_prev, to get eo_new
-        #print("A: " + str(abs(A)))
-        if abs(A) <= 0:
-          phi = math.acos(A)
-          normal_s = normal_c.cross(eo_prev) / (normal_c.cross(eo_prev)).length()
-          #2_1a. Transform the scene so that the z-axis is aligned with normal_s
-          translation = hou.Matrix4((1, 0, 0, p.position()[0],
-                                    0, 1, 0, p.position()[1],
-                                    0, 0, 1, p.position()[2], 
-                                    0, 0, 0, 1)).transposed()
-          v = math.sqrt(math.pow(normal_s[0], 2) + math.pow(normal_s[2], 2))
-          rotation_y = hou.Matrix4((normal_s[2]/v, 0, -1 * normal_s[0]/v, 0,
-                                    0, 1, 0, 0,
-                                    normal_s[0]/v, 0, normal_s[2]/v, 0, 
-                                    0, 0, 0, 1))
-          d = math.sqrt(math.pow(normal_s[0], 2) + math.pow(normal_s[1], 2) + math.pow(normal_s[2], 2))
-          rotation_x = hou.Matrix4((1, 0, 0, 0,
-                                    0, v/d,  -1 * normal_s[1]/d, 0,
-                                    0, normal_s[1]/d, v/d, 0, 
-                                    0, 0, 0, 1)) 
-          #2_1b. Carry out a rotation about the z-axis by phi
-          # NOTE: I'm not sure why, but a clockwise rotation seems better!
-          phi = math.radians(360 - math.degrees(phi))
-          rotation_z = hou.Matrix4((math.cos(phi), -1 * math.sin(phi), 0, 0,
-                                    math.sin(phi), math.cos(phi), 0, 0,
-                                    0, 0, 1, 0,
-                                    0, 0, 0, 1))
-          #2_1c. Transform the scene back using the inverse of the transformation in step 1
-          inverse_x = hou.Matrix4((1, 0, 0, 0,
-                                  0, v/d,  normal_s[1]/d, 0,
-                                  0, -1 * normal_s[1]/d, v/d, 0, 
-                                  0, 0, 0, 1)) 
-          inverse_y = hou.Matrix4((normal_s[2]/v, 0, normal_s[0]/v, 0,
-                                  0, 1, 0, 0,
-                                  -1 * normal_s[0]/v, 0, normal_s[2]/v, 0, 
-                                  0, 0, 0, 1))
-          inverse_trans = hou.Matrix4((1, 0, 0, -1 * p.position()[0],
-                                    0, 1, 0, -1 * p.position()[1],
-                                    0, 0, 1, -1 * p.position()[2], 
-                                    0, 0, 0, 1)).transposed()
-          #2_1d. Apply complete rotation and scale to normal_c
-          rotation = inverse_trans * inverse_y * inverse_x * rotation_z * rotation_x * rotation_y * translation
-          eo_new = len_ave * normal_c.multiplyAsDir(rotation)
-        else:
-          # 2_2: Minimize F(eo_new)=w1*((2 * normal_c^T * eo_new)/||eo_new||^2 - taubin_curvature)^2
-          #                        + w2*(||eo_new - eo_prev||)^2 ,to get eo_new
-          def weighted_function(eo_new):
-            eo_new = hou.Vector3(eo_new)
-            res = (w1 * math.pow((2 * normal_c.dot(eo_new)) / math.pow(eo_new.length(), 2) - taubin_curvature, 2)
-                  + w2 * math.pow((eo_new - eo_prev).length(), 2))
-            return res
-          eo_new = hou.Vector3(minimize(weighted_function,  np.array(eo_prev))[0])
-          # NOTE: Should rescale?
-          eo_new = eo_new.normalized() * len_ave
+        def weighted_function(eo_new):
+          eo_new = hou.Vector3(eo_new)
+          res = (w1 * math.pow((2 * normal_c.dot(eo_new)) / math.pow(eo_new.length(), 2) - taubin_curvature, 2)
+                + w2 * math.pow((eo_new - eo_prev).length(), 2))
+          return res
+        eo_new = hou.Vector3(minimize(weighted_function,  np.array(eo_prev))[0])
         # 3. Calculate optimal new_point
         new_point.setPosition(p.position() + eo_new)
       # 4. Recalculate changed vertex normals
@@ -804,9 +755,9 @@ for i in range(1, len(boundaries)):
       points_angle[p] = get_angle(p, points_neighbors)
 
     emergency_stop = False
-    is_iter_threshold, iter_threshold = True, 2000
+    is_iter_threshold, iter_threshold = True, 3000
     is_angle_threshold, angle_threshold = True, 140
-    is_point_threshold, point_threshold = True, 0.75
+    is_point_threshold, point_threshold = True, 0.5
 
     marked_for_deletion = []
     points_loops, angle_loops = [points_neighbors], [points_angle]
@@ -814,7 +765,7 @@ for i in range(1, len(boundaries)):
       points_neighbors, points_angle = points_loops[0], angle_loops[0]
       i = 0
       while len(points_neighbors) >= 3:
-        # print("iter: " + str(i) + " remaining: " + str(len(points_neighbors)))
+        print("iter: " + str(i) + " remaining: " + str(len(points_neighbors)))
         if is_iter_threshold and i > iter_threshold:
           emergency_stop = True
           break
@@ -839,6 +790,7 @@ for i in range(1, len(boundaries)):
         4B. Correct normal
         '''
         normal_c = correct_normal(p, p_1, p_2, points_neighbors)
+        p.setAttribValue("N", normal_c)
         '''
         4C. Basic AFT
           angle <= 75:       fill with no points, single triangle

@@ -5,7 +5,14 @@ node = hou.pwd()
 geo = node.geometry()
 inputs = node.inputs()
 for_node = hou.node(hou.parent().path() + "/repeat_end")
+
 '''
+We follow C Feng, J Liang, M Ren, G Qiao, W Lu, S Li [2020],
+  infilling using additive repair
+  Special Thanks to:
+    François Chollet for his np-only minimizer implementation
+    Jenny Zheng for work on the improved AFT
+
 1. Remove tooth faces
                      | 1 if f is n-gon with n-1 boundary edges
   is_tooth_face(f) = | 0 otherwise
