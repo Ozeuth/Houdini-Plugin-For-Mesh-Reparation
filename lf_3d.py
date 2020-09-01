@@ -642,7 +642,6 @@ for i in range(1, len(boundaries)):
       # 1. Compute the Taubin Curvature
       # NOTE: ALL_N,E elem R^3, N^T * E == N.E, so we use RHS intead
       e1, e2 = p_1.position() - p.position(), p_2.position() - p.position()
-      len_ave = 0.5 * (e1.length() + e2.length())
       taubin_curvature = (normal_c.dot(e1) / math.pow(e1.length(), 2)
                          + normal_c.dot(e2) / math.pow(e2.length(), 2))
       # 2. Solve for eo_new, through minimizing F(eo_new)
@@ -664,7 +663,7 @@ for i in range(1, len(boundaries)):
     def lhs_merge(p, new_point, point_rhs, p_1, p_2, points_angle, points_neighbors):
       # bisection: new_point = new_point, point_rhs = p_2
       # trisection: new_point = new_point_1, point_rhs = new_point_2
-      p_a, p_b = clockwise_neighbors(new_point, points_neighbors)
+      p_a, _ = clockwise_neighbors(new_point, points_neighbors)
       points_neighbors[p_1].remove(p)
       points_neighbors[p_2].remove(p)
       get_poly(geo, [new_point, p, p_1])
@@ -685,7 +684,7 @@ for i in range(1, len(boundaries)):
     def rhs_merge(p, new_point, point_lhs, p_1, p_2, points_angle, points_neighbors):
       # bisection: new_point = new_point, points_lhs = p_1
       # trisection: new_point = new_point_2, point_lhs = new_point_1
-      p_a, p_b = clockwise_neighbors(new_point, points_neighbors)
+      _, p_b = clockwise_neighbors(new_point, points_neighbors)
       points_neighbors[p_1].remove(p)
       points_neighbors[p_2].remove(p)
       get_poly(geo, [new_point, p, point_lhs])

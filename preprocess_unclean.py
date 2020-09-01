@@ -5,7 +5,6 @@ node = hou.pwd()
 geo = node.geometry()
 inputs = node.inputs()
 for_node = hou.node(hou.parent().path() + "/repeat_end")
-
 '''
 We follow C Feng, J Liang, M Ren, G Qiao, W Lu, S Li [2020],
   infilling using additive repair
@@ -29,12 +28,16 @@ def get_tooth_faces(edges):
       tooth_faces.append(key) 
   return tooth_faces
 
-reval = False
+stop = True
 edge_boundaries = inputs[1].geometry().edgeGroups()
 for edge_boundary in edge_boundaries:
   tooth_faces = get_tooth_faces(edge_boundary.edges())
   if tooth_faces:
     geo.deletePrims(tooth_faces)
-    reval = True
-    
-for_node.parm("stopcondition").set(int(not reval))
+    stop = False
+
+prior_stop = geo.findGlobalAttrib("stop") if geo.findGlobalAttrib("stop") != None else False
+stop = stop or prior_stop
+if stop:
+  for_node.parm("stopcondition").set(int(stop))
+  geo.addAttrib(hou.attribType.Global, "stop", True)
