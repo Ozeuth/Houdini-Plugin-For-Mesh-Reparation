@@ -5,6 +5,7 @@ node = hou.pwd()
 geo = node.geometry()
 inputs = node.inputs()
 for_node = hou.node(hou.parent().path() + "/repeat_end")
+smooth_node = hou.node(hou.parent().path() + "/switch")
 '''
 We follow C Feng, J Liang, M Ren, G Qiao, W Lu, S Li [2020],
   infilling using additive repair
@@ -38,6 +39,7 @@ for edge_boundary in edge_boundaries:
 
 prior_stop = geo.findGlobalAttrib("stop") if geo.findGlobalAttrib("stop") != None else False
 stop = stop or prior_stop
+smooth_node.parm("input").set(int(stop))
 if stop:
   for_node.parm("stopcondition").set(int(stop))
   geo.addAttrib(hou.attribType.Global, "stop", True)
