@@ -200,6 +200,13 @@ class VirtualPolygon():
         return edge_self
     return None
 
+is_iter_threshold = bool(hou.session.find_parm(hou.parent(), "isIter"))
+iter_threshold = hou.session.find_parm(hou.parent(), "low_iter_threshold")
+is_angle_threshold = bool(hou.session.find_parm(hou.parent(), "isAngle"))
+angle_threshold = hou.session.find_parm(hou.parent(), "low_angle_threshold")
+is_point_threshold = bool(hou.session.find_parm(hou.parent(), "isDistance"))
+point_threshold = hou.session.find_parm(hou.parent(), "low_distance_threshold")
+
 # NOTE: points ordered, but ordering breaks after deletion.
 #       Min triangulation relies on ordering
 for i in range(1, len(boundaries)):
@@ -630,7 +637,7 @@ for i in range(1, len(boundaries)):
       e_dir1 = hou.Vector3(e_dir[0] / e_len[0])
       e_dir2 = hou.Vector3(e_dir[1] / e_len[1])
 
-      alpha, beta = 0.9, 0.1
+      alpha, beta = 0.5, 0.5
       normal_i = hou.Vector3(p.attribValue("N"))
       # NOTE: Paper says e1 x e2 / ||e1 x e2||, but e2 x e1 / ||e2 x e1|| makes sense
       normal_e = e_dir2.cross(e_dir1).normalized()
@@ -754,10 +761,6 @@ for i in range(1, len(boundaries)):
       points_angle[p] = get_angle(p, points_neighbors)
 
     emergency_stop = False
-    is_iter_threshold, iter_threshold = True, 3000
-    is_angle_threshold, angle_threshold = True, 140
-    is_point_threshold, point_threshold = True, 0.5
-
     marked_for_deletion = []
     points_loops, angle_loops = [points_neighbors], [points_angle]
     while len(points_loops) > 0 and not emergency_stop:

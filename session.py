@@ -58,34 +58,44 @@ def render_then_map(image_paths, node_2d):
   print("Rendering Complete!")
   node_2d.bypass(False)
 
-def repair():
-  node_3d = None
-  node_2d = None
-  '''
-  1-3: Choose 3D Context Region
-  '''
+def low_repair():
+  # Low Frequency Pass
   matcher = nodesearch.Name("mesh_repairer")
   for node in matcher.nodes(hou.node("/obj/"), recursive=True):
     if hou.node(node.path() + "/repeat_end"):
       node_prep = hou.node(node.path() + "/repeat_end")
     if hou.node(node.path() + "/lf_3d"):
       node_prep_clean = hou.node(node.path() + "/lf_3d")
+  '''
+  1-2. Clean Tooth Edges
+       Smooth Boundaries
+  '''
+  node_prep.parm("stopcondition").set(0)
+  '''
+  3. Topology Repair
+  '''
+  node_prep_clean.bypass(False)
+
+def high_repair():
+  # High Frequency Pass
+  matcher = nodesearch.Name("mesh_repairer")
+  for node in matcher.nodes(hou.node("/obj/"), recursive=True):
     if hou.node(node.path() + "/hf_prepare_3d"):
       node_3d = hou.node(node.path() + "/hf_prepare_3d")
     if hou.node(node.path() + "/hf_optimize_3d"):
       node_op_3d = hou.node(node.path() + "/hf_optimize_3d")
     if hou.node(node.path() + "/hf_prepare_2d"):
       node_2d = hou.node(node.path() + "/hf_prepare_2d")
-  assert (node_3d and node_op_3d and node_2d), ("ERROR: Please reinstate Digital Asset")
-  node_prep.parm("stopcondition").set(0)
-  node_prep_clean.bypass(False)
+  '''
+  1. Choose 3D Context Region
+  '''
   node_3d.bypass(False)
   '''
-  4-6: 3D Context Region Optimization
+  2-4. 3D Context Region Optimization
   '''
   node_op_3d.bypass(False)
   '''
-  7. Generate 2D Render
+  5. Generate 2D Render
   '''
   num_images = len(glob.glob(hou.hipFile.name().split(".")[0] + "/*.png"))
   mark_for_destroy = []
@@ -104,10 +114,9 @@ def repair():
         render.render()
       else:
         mark_for_destroy.append(render)
-
   '''
-  8. Map 3D Context Region -> 2D Render
-  9. 2D repair
+  6. Map 3D Region -> 2D Render
+  7. 2D Repair
   '''
   #render_then_map(image_paths, node_2d)
   render_map_thread = Thread(target=render_then_map, args=(image_paths,node_2d,))
@@ -118,3 +127,8 @@ def repair():
   for node in mark_for_destroy:
     node.destroy()
   reset_camera_info()
+
+# Both Passes
+def repair():
+  low_repair()
+  high_repair()
