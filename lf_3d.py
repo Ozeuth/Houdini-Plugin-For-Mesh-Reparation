@@ -200,6 +200,11 @@ class VirtualPolygon():
         return edge_self
     return None
 
+alpha = hou.session.find_parm(hou.parent(), "low_alpha_beta")
+beta = 1 - alpha
+w1 = hou.session.find_parm(hou.parent(), "low_w1_w2")
+w2 = 1 - w1
+
 is_iter_threshold = bool(hou.session.find_parm(hou.parent(), "isIter"))
 iter_threshold = hou.session.find_parm(hou.parent(), "low_iter_threshold")
 is_angle_threshold = bool(hou.session.find_parm(hou.parent(), "isAngle"))
@@ -637,7 +642,6 @@ for i in range(1, len(boundaries)):
       e_dir1 = hou.Vector3(e_dir[0] / e_len[0])
       e_dir2 = hou.Vector3(e_dir[1] / e_len[1])
 
-      alpha, beta = 0.5, 0.5
       normal_i = hou.Vector3(p.attribValue("N"))
       # NOTE: Paper says e1 x e2 / ||e1 x e2||, but e2 x e1 / ||e2 x e1|| makes sense
       normal_e = e_dir2.cross(e_dir1).normalized()
@@ -654,7 +658,6 @@ for i in range(1, len(boundaries)):
       # 2. Solve for eo_new, through minimizing F(eo_new)
       for new_point in new_points:
         eo_prev = new_point.position() - p.position()
-        w1, w2 = 0.5, 0.5
         def weighted_function(eo_new):
           eo_new = hou.Vector3(eo_new)
           res = (w1 * math.pow((2 * normal_c.dot(eo_new)) / math.pow(eo_new.length(), 2) - taubin_curvature, 2)

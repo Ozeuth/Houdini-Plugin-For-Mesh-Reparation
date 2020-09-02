@@ -25,12 +25,12 @@ if subnet.canCreateDigitalAsset():
   inputs_folder.addParmTemplate(hou.ButtonParmTemplate("new", "Full Reparation", script_callback = "hou.session.repair()", script_callback_language = hou.scriptLanguage.Python, help="Begin New Reparation"))
   # Low Frequency Folder
   low_folder = hou.FolderParmTemplate("low folder", "Low Frequency", folder_type = hou.folderType.Tabs)
-  low_alpha_beta = hou.FloatParmTemplate("low_alpha_beta", "Corrected Normal Ratio, Alpha:Beta", 
+  low_alpha_beta = hou.FloatParmTemplate("low_alpha_beta", "Alpha:Beta", 
     1, default_value=(0.5,), min=0.0, max=1.0, min_is_strict=True, max_is_strict=True,
-    help="Try larger alpha for rounder output topologies, larger beta for flatter output topologies")
-  low_w1_w2 = hou.FloatParmTemplate("low_w1_w1", "Optimal Position Ratio, w1:w2",
+    help="Used in normal correction. Try larger alpha for rounder output topologies, larger beta for flatter output topologies")
+  low_w1_w2 = hou.FloatParmTemplate("low_w1_w2", "w1:w2",
     1, default_value=(0.5,), min=0.0, max=1.0, min_is_strict=True, max_is_strict=True,
-    help="Controls learning of optimized new point positions")
+    help="Used in learning of optimized new point positions")
   low_folder.addParmTemplate(low_alpha_beta)
   low_folder.addParmTemplate(low_w1_w2)
 
