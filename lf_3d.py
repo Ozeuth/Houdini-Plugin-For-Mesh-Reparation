@@ -534,21 +534,20 @@ for i in range(1, len(boundaries)):
     def clockwise_neighbors(p, points_neighbors):
       # p_1 = left of p, p_2 = right of p
       p_a, p_b = points_neighbors[p]
+      p_1, p_2 = None, None
       for prim in p.prims():
         if prim.type() == hou.primType.Polygon:
           ps = []
           for v in prim.vertices():
             ps.append(v.point())
-
-          curr_p = p_a if p_a in ps else (p_b if p_b in ps else None)
-          if curr_p != None:
+          
+          if p_a in ps or p_b in ps:
             p_i = ps.index(p)
             ps =  ps[p_i:] + ps[:p_i]
             assert(ps[0] == p)
-            if ps[1] == curr_p:
-              p_2 = curr_p
-            elif ps[len(ps) - 1] == curr_p:
-              p_1 = curr_p
+            p_2 = ps[1] if (ps[1] == p_a or ps[1] == p_b) else p_2
+            p_1 = ps[len(ps) - 1] if (ps[len(ps) - 1] == p_a or ps[len(ps) - 1] == p_b) else p_1
+      assert(p_1 != None and p_2 != None)
       return p_1, p_2
 
     def get_angle(p, points_neighbors):
