@@ -7,6 +7,7 @@ from PIL import ImageFont
 import time
 from threading import Thread
 
+HDA_name = "Mesh_Repairer_Oz"
 cameras_info = {
   "centers": [],
   "rotationsx": [],
@@ -60,7 +61,7 @@ def render_then_map(image_paths, node_2d):
 
 def low_repair():
   # Low Frequency Pass
-  matcher = nodesearch.Name("mesh_repairer")
+  matcher = nodesearch.Name(HDA_name)
   for node in matcher.nodes(hou.node("/obj/"), recursive=True):
     if hou.node(node.path() + "/repeat_end"):
       node_prep = hou.node(node.path() + "/repeat_end")
@@ -78,7 +79,7 @@ def low_repair():
 
 def high_repair():
   # High Frequency Pass
-  matcher = nodesearch.Name("mesh_repairer")
+  matcher = nodesearch.Name(HDA_name)
   for node in matcher.nodes(hou.node("/obj/"), recursive=True):
     if hou.node(node.path() + "/hf_prepare_3d"):
       node_3d = hou.node(node.path() + "/hf_prepare_3d")

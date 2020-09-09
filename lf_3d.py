@@ -770,7 +770,7 @@ for i in range(1, len(boundaries)):
       points_neighbors, points_angle = points_loops[0], angle_loops[0]
       i = 0
       while len(points_neighbors) >= 3:
-        print("iter: " + str(i) + " remaining: " + str(len(points_neighbors)))
+        #print("iter: " + str(i) + " remaining: " + str(len(points_neighbors)))
         if is_iter_threshold and i > iter_threshold:
           emergency_stop = True
           break

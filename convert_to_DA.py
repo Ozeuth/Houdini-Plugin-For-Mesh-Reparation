@@ -10,19 +10,21 @@ for curr_node in node.parent().children():
     DA_nodes.append(curr_node)
 
 subnet = node.parent().collapseIntoSubnet(tuple(DA_nodes))
+subnet.setName("mesh_repairer")
 if subnet.canCreateDigitalAsset():
   asset = subnet.createDigitalAsset(
     name="Mesh_Repairer_Oz",
     min_num_inputs = 1,
     max_num_inputs = 1,
     ignore_external_references = True)
-  asset.layoutChildren()
   parm_group = asset.parmTemplateGroup()
 
   # Input Folder
   inputs_folder = hou.FolderParmTemplate("inputs_folder", "Inputs", folder_type=hou.folderType.Tabs)
   inputs_folder.addParmTemplate(hou.StringParmTemplate("repairPath", "Repairer Path", 1, help="Path to Mesh Repairer", script_callback='if not ("# -- Houdini Mesh Repairer -- #" in hou.sessionModuleSource()): hou.appendSessionModuleSource(open(hou.pwd().parm("repairPath").eval() + "/session.py", "r").read())', script_callback_language = hou.scriptLanguage.Python))
+  inputs_folder.addParmTemplate(hou.ToggleParmTemplate("isSmooth", "Smooth Boundaries", 0, help="Smooth input hole boundaries"))
   inputs_folder.addParmTemplate(hou.ButtonParmTemplate("new", "Full Reparation", script_callback = "hou.session.repair()", script_callback_language = hou.scriptLanguage.Python, help="Begin New Reparation"))
+  
   # Low Frequency Folder
   low_folder = hou.FolderParmTemplate("low folder", "Low Frequency", folder_type = hou.folderType.Tabs)
   low_alpha_beta = hou.FloatParmTemplate("low_alpha_beta", "Alpha:Beta", 
@@ -69,5 +71,6 @@ if subnet.canCreateDigitalAsset():
   parm_group.append(low_folder)
   parm_group.append(high_folder)
   asset.setParmTemplateGroup(parm_group)
+  asset.setName("Mesh_Repairer_Oz")
 
 node.bypass(True)
