@@ -18,11 +18,20 @@ if subnet.canCreateDigitalAsset():
     max_num_inputs = 1,
     ignore_external_references = True)
   parm_group = asset.parmTemplateGroup()
-
+  #script_callback='hou.node(hou.pwd().path() + "/smooth_boundaries/switch").parm("input").set(int(hou.pwd().parm("isSmooth").eval()))',
   # Input Folder
   inputs_folder = hou.FolderParmTemplate("inputs_folder", "Inputs", folder_type=hou.folderType.Tabs)
   inputs_folder.addParmTemplate(hou.StringParmTemplate("repairPath", "Repairer Path", 1, help="Path to Mesh Repairer", script_callback='if not ("# -- Houdini Mesh Repairer -- #" in hou.sessionModuleSource()): hou.appendSessionModuleSource(open(hou.pwd().parm("repairPath").eval() + "/session.py", "r").read())', script_callback_language = hou.scriptLanguage.Python))
-  inputs_folder.addParmTemplate(hou.ToggleParmTemplate("isSmooth", "Smooth Boundaries", 0, help="Smooth input hole boundaries"))
+  inputs_folder.addParmTemplate(hou.ToggleParmTemplate("isSmooth", "Smooth Boundaries", 0,
+    script_callback='hou.node(hou.pwd().path() + "/smooth_boundaries/smooth").parm("strength").set(int(hou.pwd().parm("inputs_smooth_factor").eval()) * int(hou.pwd().parm("isSmooth").eval()))',
+    script_callback_language=hou.scriptLanguage.Python, help="Smooth input hole boundaries"))
+  inputs_smooth_factor = hou.IntParmTemplate("inputs_smooth_factor", "Smooth Boundaries Factor", 
+    1, default_value=(50,), min=0, max=100,
+    min_is_strict=True, max_is_strict=False,
+    script_callback='hou.node(hou.pwd().path() + "/smooth_boundaries/smooth").parm("strength").set(int(hou.pwd().parm("inputs_smooth_factor").eval()) * int(hou.pwd().parm("isSmooth").eval()))',
+    script_callback_language=hou.scriptLanguage.Python, help="Intensity of pre-repair smoothing")
+  inputs_smooth_factor.setConditional(hou.parmCondType.DisableWhen, "{ isSmooth == 0 }")
+  inputs_folder.addParmTemplate(inputs_smooth_factor)
   inputs_folder.addParmTemplate(hou.ButtonParmTemplate("new", "Full Reparation", script_callback = "hou.session.repair()", script_callback_language = hou.scriptLanguage.Python, help="Begin New Reparation"))
   
   # Low Frequency Folder
