@@ -5,6 +5,7 @@ import numpy as np
 import numpy.random as random
 import os
 from PIL import Image, ImageDraw
+from collections import defaultdict
 
 node = hou.pwd()
 geo = node.geometry()
@@ -22,6 +23,7 @@ path_name = hou.hipFile.name().split(".")[0]
 if not os.path.exists(path_name):
   os.makedirs(path_name)
 boundaries = geo.pointGroups()
+edge_boundaries = geo.edgeGroups()
 try:
   for excess in range(len(boundaries-1), len(glob.glob(path_name + "/*.png"))):
     os.remove(path_name + "/" + str(excess) + "_opening.png")
@@ -30,12 +32,32 @@ except:
     os.remove(f)
 
 hou.session.reset_camera_info()
+
+def clockwise_neighbors(p, points_neighbors):
+  # p_1 = left of p, p_2 = right of p
+  p_a, p_b = points_neighbors[p]
+  p_1, p_2 = None, None
+  for prim in p.prims():
+    if prim.type() == hou.primType.Polygon:
+      ps = []
+      for v in prim.vertices():
+        ps.append(v.point())
+          
+      if p_a in ps or p_b in ps:
+        p_i = ps.index(p)
+        ps =  ps[p_i:] + ps[:p_i]
+        assert(ps[0] == p)
+        p_2 = ps[1] if (ps[1] == p_a or ps[1] == p_b) else p_2
+        p_1 = ps[len(ps) - 1] if (ps[len(ps) - 1] == p_a or ps[len(ps) - 1] == p_b) else p_1
+  assert(p_1 != None and p_2 != None)
+  return p_1, p_2
+
 # 1-3: Choose 3D Context Region
 i = 0
 resolutions_x = []
 resolutions_y = []
 
-for boundary in boundaries:
+for boundary, edge_boundary in zip(boundaries, edge_boundaries):
   if i == 0:
     i += 1
     continue
@@ -51,12 +73,26 @@ for boundary in boundaries:
   A = []
   b = []
   boundary_center = np.array([0, 0, 0])
+  boundary_normal = hou.Vector3((0, 0, 0))
   points = boundary.points()
+  edges = edge_boundary.edges()
+  points_neighbors = defaultdict(list)
+  for edge in edges:
+    p_1, p_2 = edge.points()
+    points_neighbors[p_1].append(p_2)
+    points_neighbors[p_2].append(p_1)
   for point in points:
     point_pos = point.position()
     A.append([point_pos[0], point_pos[1], 1])
     b.append(point_pos[2])
     boundary_center = boundary_center + np.array(point_pos)
+
+    p_l, p_r = clockwise_neighbors(point, points_neighbors)
+    e_dir1 = hou.Vector3(p_l.position() - point.position()).normalized()
+    e_dir2 = hou.Vector3(p_r.position() - point.position()).normalized()
+    point_normal = e_dir2.cross(e_dir1).normalized()
+    boundary_normal += point_normal
+  boundary_normal /= len(points)
   A = np.matrix(A)
   b = np.matrix(b).T
   boundary_center /= len(points)
@@ -86,6 +122,9 @@ for boundary in boundaries:
   else:
     plane_normal = np.array([0.001, 1, 0.001])* (1 if (a >= 0) else -1)
     plane_dist = 0.001
+  if boundary_normal.angleTo(hou.Vector3(plane_normal)) > 90:
+    plane_normal = -1 * plane_normal
+
   translation = hou.Matrix4((1, 0, 0, boundary_center[0],
                               0, 1, 0, boundary_center[1],
                               0, 0, 1, boundary_center[2], 
