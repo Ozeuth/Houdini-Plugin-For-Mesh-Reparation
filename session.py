@@ -58,7 +58,8 @@ def render_then_map(image_paths, node_2d, is_full):
       time.sleep(1)
   print("Rendering Complete!")
   node_2d.bypass(False)
-  low_repair()
+  if is_full:
+    low_repair()
 
 def preprocess():
   matcher = nodesearch.Name(HDA_name)
