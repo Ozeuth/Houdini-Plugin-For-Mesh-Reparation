@@ -59,25 +59,32 @@ def render_then_map(image_paths, node_2d):
   print("Rendering Complete!")
   node_2d.bypass(False)
 
-def low_repair():
-  # Low Frequency Pass
+def preprocess():
   matcher = nodesearch.Name(HDA_name)
   for node in matcher.nodes(hou.node("/obj/"), recursive=True):
     if hou.node(node.path() + "/repeat_end"):
       node_prep = hou.node(node.path() + "/repeat_end")
-    if hou.node(node.path() + "/lf_3d"):
-      node_prep_clean = hou.node(node.path() + "/lf_3d")
+      break
   '''
-  1-2. Clean Tooth Edges
-       Smooth Boundaries
+  1. Clean Tooth Edges
   '''
   node_prep.parm("stopcondition").set(0)
+
+def low_repair():
+  preprocess()
+  # Low Frequency Pass
+  matcher = nodesearch.Name(HDA_name)
+  for node in matcher.nodes(hou.node("/obj/"), recursive=True):
+    if hou.node(node.path() + "/lf_3d"):
+      node_prep_clean = hou.node(node.path() + "/lf_3d")
+      break
   '''
-  3. Topology Repair
+  1. Topology Repair
   '''
   node_prep_clean.bypass(False)
 
 def high_repair():
+  preprocess()
   # High Frequency Pass
   matcher = nodesearch.Name(HDA_name)
   for node in matcher.nodes(hou.node("/obj/"), recursive=True):
@@ -131,5 +138,6 @@ def high_repair():
 
 # Both Passes
 def repair():
-  low_repair()
+  preprocess()
   high_repair()
+  low_repair()
