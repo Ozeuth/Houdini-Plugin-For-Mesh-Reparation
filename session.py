@@ -106,7 +106,7 @@ def high_repair(is_full=False):
   '''
   5. Generate 2D Render
   '''
-  num_images = len(glob.glob(hou.hipFile.name().split(".")[0] + "/*.png"))
+  num_images = len(glob.glob(hou.hipFile.name().split(".")[0] + "/*_opening.png"))
   mark_for_destroy = []
   image_paths = []
   cameras = hou.nodeType(hou.objNodeTypeCategory(),"cam").instances()
