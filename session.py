@@ -36,7 +36,7 @@ def reset_camera_info():
   cameras_info["normals"] = []
   cameras_info["zooms"] = []
 
-def render_then_map(image_paths, node_2d):
+def render_then_map(image_paths, node_2d, is_full):
   '''
   NOTE: This is a tenuous solution to a synchronicity issue.
   Absence of a rendering checkpoint file means:
@@ -58,6 +58,7 @@ def render_then_map(image_paths, node_2d):
       time.sleep(1)
   print("Rendering Complete!")
   node_2d.bypass(False)
+  low_repair()
 
 def preprocess():
   matcher = nodesearch.Name(HDA_name)
@@ -83,7 +84,7 @@ def low_repair():
   '''
   node_prep_clean.bypass(False)
 
-def high_repair():
+def high_repair(is_full=False):
   preprocess()
   # High Frequency Pass
   matcher = nodesearch.Name(HDA_name)
@@ -127,7 +128,7 @@ def high_repair():
   7. 2D Repair
   '''
   #render_then_map(image_paths, node_2d)
-  render_map_thread = Thread(target=render_then_map, args=(image_paths,node_2d,))
+  render_map_thread = Thread(target=render_then_map, args=(image_paths,node_2d,is_full,))
   render_map_thread.start()
   '''
   *. Clean-Up
@@ -139,5 +140,4 @@ def high_repair():
 # Both Passes
 def repair():
   preprocess()
-  high_repair()
-  low_repair()
+  high_repair(is_full=True)

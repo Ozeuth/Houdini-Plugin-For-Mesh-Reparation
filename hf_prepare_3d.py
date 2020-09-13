@@ -11,11 +11,6 @@ geo = node.geometry()
 inputs = node.inputs()
 is_DA = "mesh_repairer" in node.parent().name()
 
-if (is_DA):
-  input_node = node.parent().indirectInputs()[0]
-else:
-  assert (inputs[0].type().name() == "file"), ("ERROR: Input must be chosen geometry")
-  input_node = inputs[0]
 bbox_node = hou.node(hou.parent().path() + "/oz_bbox")
 uv_bbox_node = hou.node(hou.parent().path() + "/uv_viewer_bbox")
 uv_node = hou.node(hou.parent().path() + "/uv_viewer")
