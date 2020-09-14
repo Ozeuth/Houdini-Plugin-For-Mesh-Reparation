@@ -18,10 +18,17 @@ if subnet.canCreateDigitalAsset():
     max_num_inputs = 1,
     ignore_external_references = True)
   parm_group = asset.parmTemplateGroup()
-  #script_callback='hou.node(hou.pwd().path() + "/smooth_boundaries/switch").parm("input").set(int(hou.pwd().parm("isSmooth").eval()))',
   # Input Folder
   inputs_folder = hou.FolderParmTemplate("inputs_folder", "Inputs", folder_type=hou.folderType.Tabs)
-  inputs_folder.addParmTemplate(hou.StringParmTemplate("repairPath", "Repairer Path", 1, help="Path to Mesh Repairer", script_callback='if not ("# -- Houdini Mesh Repairer -- #" in hou.sessionModuleSource()): hou.appendSessionModuleSource(open(hou.pwd().parm("repairPath").eval() + "/session.py", "r").read())', script_callback_language = hou.scriptLanguage.Python))
+  inputs_folder.addParmTemplate(hou.ToggleParmTemplate("isPath", "Use Unique Path", 0, help="Check to change path to look for session file", script_callback='if not bool(hou.pwd().parm("isPath").eval()): hou.pwd().parm("repairPath").set("Using path to HIP")', script_callback_language = hou.scriptLanguage.Python))
+  inputs_repair_path = hou.StringParmTemplate("repairPath", "Repairer Path", 1, default_value=("Using path to HIP",), help="Path to Mesh Repairer")
+  inputs_repair_path.setConditional(hou.parmCondType.DisableWhen, "{ isPath == 0 }")
+  inputs_folder.addParmTemplate(inputs_repair_path)
+  input_control = 'repair_path = hou.pwd().parm("repairPath").eval() if bool(hou.pwd().parm("isPath").eval()) else hou.getenv("HIP");\
+  hou.appendSessionModuleSource(open(repair_path + "/session.py", "r").read() if not "# -- Houdini Mesh Repairer -- #" in hou.sessionModuleSource() else "")'
+  inputs_folder.addParmTemplate(hou.ButtonParmTemplate("inputs_init", "Initialize Repairer Session",
+   script_callback = input_control, script_callback_language = hou.scriptLanguage.Python, help="Initialize Houdini session using Repairer Path"))
+
   inputs_folder.addParmTemplate(hou.ToggleParmTemplate("isSmooth", "Smooth Boundaries", 0,
     script_callback='hou.node(hou.pwd().path() + "/smooth_boundaries/smooth").parm("strength").set(int(hou.pwd().parm("inputs_smooth_factor").eval()) * int(hou.pwd().parm("isSmooth").eval()))',
     script_callback_language=hou.scriptLanguage.Python, help="Smooth input hole boundaries"))
