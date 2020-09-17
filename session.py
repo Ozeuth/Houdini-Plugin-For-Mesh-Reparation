@@ -15,7 +15,7 @@ cameras_info = {
   "normals": [],
   "zooms": []
 }
-
+# ------------ Generic Utility Functions ------------ #
 def find_parm(node, name):
   params = hou.parent().parms()
   found_eval = None
@@ -25,6 +25,7 @@ def find_parm(node, name):
       break
   return found_eval
 
+# ------------ Pipeline Functions ------------ #
 def reset_camera(camera):
   camera.parmTuple('t').set((0, 0, 0))
   camera.parmTuple('r').set((0, 0, 0))
