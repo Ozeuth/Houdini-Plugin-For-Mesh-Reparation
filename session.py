@@ -114,13 +114,13 @@ def high_repair(is_full=False):
   cameras = hou.nodeType(hou.objNodeTypeCategory(),"cam").instances()
   for camera in cameras:
     camera_name = camera.name()
-    if "oz_camera_" in camera_name and int(filter(str.isdigit, camera_name)) > num_images:
+    if "oz_camera_" in camera_name and int("".join(filter(str.isdigit, camera_name))) > num_images:
       mark_for_destroy.append(camera)
   renders = hou.nodeType(hou.ropNodeTypeCategory(), "ifd").instances()
   for render in renders:
     render_name = render.name()
     if "oz_render_" in render_name:
-      if int(filter(str.isdigit, render_name)) <= num_images:
+      if int("".join(filter(str.isdigit, render_name))) <= num_images:
         image_paths.append(render.parm("vm_picture").eval())
         render.render()
       else:

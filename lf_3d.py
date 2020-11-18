@@ -175,7 +175,7 @@ class VirtualPolygon():
     ps_zip2 = ps_zip1[1:] + [ps_zip1[0]]
 
     ps_zipped = []
-    for p_zip1, p_zip2 in np.array(zip(ps_zip1, ps_zip2)):
+    for p_zip1, p_zip2 in zip(ps_zip1, ps_zip2):
       if p_zip1.number() < p_zip2.number():
         ps_zipped.append([p_zip1, p_zip2])
       else:
