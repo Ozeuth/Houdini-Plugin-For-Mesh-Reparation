@@ -6,6 +6,7 @@ import operator
 import random
 import copy
 from collections import defaultdict
+from PIL import Image, ImageDraw
 
 node = hou.pwd()
 geo = node.geometry()
@@ -544,25 +545,62 @@ class Moving_Least_Squares_Fill():
                | xn-x_het  yn-y_het  zn-z_het |
     '''
     O = hou.Vector3(0, 0, 0)
-    M = []
-    for point_vicinity in points_vicinity:
+    P_boundary = []
+    for point in self.points:
+      position = point.position()
+      O += position
+      P_boundary.append(position)
+    P_vicinity = []
+    for point_vicinity in list(set(self.points_vicinity) - set(self.points)):
       position = point_vicinity.position()
       O += position
-      M.append(position)
+      P_vicinity.append(position)
     O = np.array(O / len(points_vicinity))
-    M = np.array(M) - O
+    P_boundary, P_vicinity = np.array(P_boundary), np.array(P_vicinity)
+    P = np.concatenate((P_boundary, P_vicinity))
+    M = P - O
     MTM = np.matmul(np.transpose(M), M)
     eigenvalues, eigenvectors = np.linalg.eig(MTM)
     order = eigenvalues.argsort()
     u, v, s = eigenvectors[order[2]], eigenvectors[order[1]], eigenvectors[order[0]]
     '''
-    B. Project each vicinity point orthographically into reference plane, to get
-       (u, v) and distance to reference plane, s
+    B. Project each vicinity point p orthographically onto reference plane to get p_
+       and distance s. Convert 3D p_ point to 2D (u, v) coordinate
     '''
+    F_boundary, F_vicinity = np.inner((P_boundary - O), s), np.inner((P_vicinity - O), s)
+    P_boundary_ = P_boundary - np.multiply(np.tile(s, (F_boundary.shape[0], 1)), F_boundary[:, np.newaxis])
+    P_vicinity_ = P_vicinity - np.multiply(np.tile(s, (F_vicinity.shape[0], 1)), F_vicinity[:, np.newaxis])
+    P_ = np.concatenate((P_boundary_, P_vicinity_))
+
+    U_boundary, V_boundary = np.inner((P_boundary_ - O), u), np.inner((P_boundary_ - O), v)
+    U_vicinity, V_vicinity = np.inner((P_vicinity_ - O), u), np.inner((P_vicinity_ - O), v)
+    U, V = np.concatenate((U_boundary, U_vicinity)), np.concatenate((V_boundary, V_vicinity))
     '''
-    for point_vicinity in V:
-      f = np.array(point_vicinity.position()) - O
-      dist = '''
+    C. Then we generate a mask image. Unlike the original implementation, we only use
+       the boundary points.
+    '''
+    min_u, max_u = np.min(U), np.max(U)
+    min_v, max_v = np.min(V), np.max(V)
+    # We need to convert from UV coord system (where (0, 0) is domain center)
+    # To image representable form (where (0, 0) is domain start), and have visible results
+    # Mapping: (u + u_offset)*scale = x, (v + v_offset)*scale = y 
+    scale = 100
+    u_offset, v_offset = min_u * -1, min_v * -1
+    u_length, v_length = max_u - min_u, max_v - min_v
+
+    img = Image.new("L", (math.ceil(scale * u_length), math.ceil(scale * v_length)), "#000000")
+    draw = ImageDraw.Draw(img)
+    pix_boundary = []
+    for u_boundary, v_boundary in zip(U_boundary, V_boundary):
+      pix_pos = (scale*(u_boundary + u_offset), scale*(v_boundary + v_offset))
+      pix_boundary.append(pix_pos)
+    draw.polygon(pix_boundary, fill="#7F7F7F")
+    draw.point(pix_boundary, fill="#FFFFFF")
+    
+    path_name = hou.hipFile.name().split(".")[0]
+    img.save(path_name + "/" + "test.png")
+
+
 
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
@@ -999,6 +1037,6 @@ for i in range(1, len(point_boundaries)):
     '''
     3. Fill large hole with advancing front method
     '''
-    #Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
-    AFT_Fill(geo, points, edges, edges_neighbors).fill()
+    Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
+    #AFT_Fill(geo, points, edges, edges_neighbors).fill()
 node.bypass(True)
