@@ -9,12 +9,20 @@ from collections import defaultdict
 
 node = hou.pwd()
 geo = node.geometry()
-boundaries = geo.pointGroups()
+
+point_boundaries = []
+neighbor_point_boundaries = []
+for point_group in geo.pointGroups():
+  if "neighbor" in point_group.name():
+    neighbor_point_boundaries.append(point_group)
+  else: 
+    point_boundaries.append(point_group)
+
 edge_boundaries = []
-neighbor_boundaries = []
+neighbor_edge_boundaries = []
 for edge_group in geo.edgeGroups():
   if "neighbor" in edge_group.name():
-    neighbor_boundaries.append(edge_group)
+    neighbor_edge_boundaries.append(edge_group)
   else:
     edge_boundaries.append(edge_group)
 
@@ -440,7 +448,7 @@ class Projection_BiLaplacian_Fill():
     pk | Wki Wkj Lk  |
     where
       Li = | Wij + Wik + ... if pi is a generated point
-          | 1               otherwise
+           | 1               otherwise
             | 0.5*(cot(alpha) + cot(beta)) if eij
       Wij = | 0                            otherwise
       where for two polygons (p_i, p_j, p_k), (p_i, p_j, p_m) adjacent to interior edge eij,
@@ -507,6 +515,54 @@ class Projection_BiLaplacian_Fill():
       p.setPosition(laplace_fs[ref])
       if p not in exterior_points:
         p.setPosition(laplace_fs[ref])
+
+class Moving_Least_Squares_Fill():
+  '''
+  We Follow J Wang, M M Oliverira [2006],
+  filling holes on locally smooth surfaces reconstructed from point clouds
+  '''
+  def __init__(self, geo, points, points_vicinity, edges, edges_neighbors):
+    self.geo = geo
+    self.points = points
+    self.points_vicinity = points_vicinity
+    self.edges = edges
+    self.edges_neighbors = edges
+  
+  def fill(self):
+    '''
+    A. Compute a reference Plane,
+       with origin O and coordinates U, V, S
+       where
+        O = (x_het, y_het, z_het), average of vicinity points
+        U,V,S = (eigenvector with largest eigenvalue of M^TM,
+                 eigenvector with middling eigenvalue of M^TM,
+                 eigenvector with smallest eigenvalue of M^TM)
+        where 
+           M = | x1-x_het  y1-y_het  z1-z_het |
+               | x2-x_het  y2-y_het  z2-z_het |
+               |           ........           |
+               | xn-x_het  yn-y_het  zn-z_het |
+    '''
+    O = hou.Vector3(0, 0, 0)
+    M = []
+    for point_vicinity in points_vicinity:
+      position = point_vicinity.position()
+      O += position
+      M.append(position)
+    O = np.array(O / len(points_vicinity))
+    M = np.array(M) - O
+    MTM = np.matmul(np.transpose(M), M)
+    eigenvalues, eigenvectors = np.linalg.eig(MTM)
+    order = eigenvalues.argsort()
+    u, v, s = eigenvectors[order[2]], eigenvectors[order[1]], eigenvectors[order[0]]
+    '''
+    B. Project each vicinity point orthographically into reference plane, to get
+       (u, v) and distance to reference plane, s
+    '''
+    '''
+    for point_vicinity in V:
+      f = np.array(point_vicinity.position()) - O
+      dist = '''
 
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
@@ -923,11 +979,11 @@ point_threshold = hou.session.find_parm(hou.parent(), "low_distance_threshold")
 
 # NOTE: points ordered, but ordering breaks after deletion.
 #       Min triangulation relies on ordering
-for i in range(1, len(boundaries)):
-  points = boundaries[i].points()
+for i in range(1, len(point_boundaries)):
+  points = point_boundaries[i].points()
+  points_vicinity = neighbor_point_boundaries[i].points()
   edges = edge_boundaries[i].edges()
-  edges_neighbors = neighbor_boundaries[i].edges()
-
+  edges_neighbors = neighbor_edge_boundaries[i].edges()
 
   if len(points) <= 8:
     '''
@@ -943,5 +999,6 @@ for i in range(1, len(boundaries)):
     '''
     3. Fill large hole with advancing front method
     '''
+    #Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
     AFT_Fill(geo, points, edges, edges_neighbors).fill()
 node.bypass(True)
