@@ -568,6 +568,7 @@ class Moving_Least_Squares_Fill():
        and distance s. Convert 3D p_ point to 2D (u, v) coordinate
     '''
     F_boundary, F_vicinity = np.inner((P_boundary - O), s), np.inner((P_vicinity - O), s)
+    F = np.concatenate(((F_boundary, F_vicinity)))
     P_boundary_ = P_boundary - np.multiply(np.tile(s, (F_boundary.shape[0], 1)), F_boundary[:, np.newaxis])
     P_vicinity_ = P_vicinity - np.multiply(np.tile(s, (F_vicinity.shape[0], 1)), F_vicinity[:, np.newaxis])
     P_ = np.concatenate((P_boundary_, P_vicinity_))
@@ -575,6 +576,7 @@ class Moving_Least_Squares_Fill():
     U_boundary, V_boundary = np.inner((P_boundary_ - O), u), np.inner((P_boundary_ - O), v)
     U_vicinity, V_vicinity = np.inner((P_vicinity_ - O), u), np.inner((P_vicinity_ - O), v)
     U, V = np.concatenate((U_boundary, U_vicinity)), np.concatenate((V_boundary, V_vicinity))
+    UV = np.vstack((U, V)).T
     '''
     C. Then we generate a mask image. Unlike the original implementation, we only use
        the boundary points.
@@ -602,9 +604,11 @@ class Moving_Least_Squares_Fill():
     # We need to convert from UV coord system (where (0, 0) is domain center)
     # To image representable form (where (0, 0) is domain start), and have visible results
     # Mapping: (u + u_offset)*scale = x, (v + v_offset)*scale = y 
+    print((u, v, s), flush=True)
     scale = 100
     u_offset, v_offset = min_u * -1, min_v * -1
     u_length, v_length = max_u - min_u, max_v - min_v
+    print((u_length, v_length), flush=True)
 
     img = Image.new("L", (math.ceil(scale * u_length), math.ceil(scale * v_length)), "#000000") # Black Fill = Mask
     draw = ImageDraw.Draw(img)
@@ -652,17 +656,29 @@ class Moving_Least_Squares_Fill():
        In turn, the solution for a0....5 where E(S) is minimized is:
          a(p) = (BW(p)B^T)^-1 BW(p)F
          where
-           B = | 1.....1    |  W = | w1    0 | F = | f1 |
-               | u1....un   |      |   ...   |     | .. |
-               | v1....vn   |      | 0    wn |     | fn |
+           B = | 1.....1    | W(p) = | w1    0 | F = | f1 |
+               | u1....un   |        |   ...   |     | .. |
+               | v1....vn   |        | 0    wn |     | fn |
                | u1^2..un^2 |
                | v1^2..vn^2 |  
                | u1v1..unvn |
     '''
-    '''
+    B = np.concatenate((np.ones(U.shape[0]), U, V, U*U, V*V, U*V)).reshape((6, U.shape[0]))
+    ps = []
     for sample_point in sample_points:
-      '''
-    
+      u_sample, v_sample = sample_point
+      D = np.sum(np.power((UV-sample_point), 2), axis=1)
+      W = np.diag(np.exp(-1*D)/(D))
+      A = np.matmul(np.linalg.inv(np.matmul(B, np.matmul(W, B.T))), np.matmul(B, np.matmul(W, F)))
+
+      # We map from uv space to 3d space, and then project the sample point in direction S
+      # by the distance S(u, v)
+      s_sample = A[0] + A[1]*u_sample + A[2]*v_sample + A[3]*u_sample*u_sample + A[4]*v_sample*v_sample + A[5]*u_sample*v_sample
+      sample_proj_pos = O + u_sample * u + v_sample * v + s_sample * s
+      sample_proj_point = geo.createPoint()
+      sample_proj_point.setPosition(sample_proj_pos)
+      ps.append(sample_proj_point)
+    get_poly(geo, ps)
 
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
@@ -1020,6 +1036,7 @@ class AFT_Fill():
               for point_to_delete in points_to_delete:
                 if point_to_delete in new_poly.points():
                   polys_to_delete.append(new_poly)
+            #print(polys_to_delete, flush=True)
             polys_to_delete = np.unique(np.array(polys_to_delete))
             marked_for_deletion.extend(points_to_delete)
             self.geo.deletePrims(polys_to_delete, keep_points=True)
@@ -1099,6 +1116,6 @@ for i in range(1, len(point_boundaries)):
     '''
     3. Fill large hole with advancing front method
     '''
-    Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
-    #AFT_Fill(geo, points, edges, edges_neighbors).fill()
+    #Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
+    AFT_Fill(geo, points, edges, edges_neighbors).fill()
 node.bypass(True)
