@@ -578,9 +578,27 @@ class Moving_Least_Squares_Fill():
     '''
     C. Then we generate a mask image. Unlike the original implementation, we only use
        the boundary points.
+    D. New sampling points are then set over a regular grid in UV space.
+       where
+         grid_stepsize = sqrt(area/3n)
+         where
+           area = sum area of polygons connected to these points
+           n = number of points on boundary
+       We reject a sampling point if it is closer than beta * grid_stepsize from boundary
+       where
+         beta = 0.75    
     '''
     min_u, max_u = np.min(U), np.max(U)
     min_v, max_v = np.min(V), np.max(V)
+
+    # NOTE: We assume area is in 3D, unprojected space
+    polys = defaultdict(int)
+    for point in points:
+      for prim in point.prims():
+        if prim.type() == hou.primType.Polygon:
+          polys[prim.number()] = prim.intrinsicValue("measuredarea")
+    grid_stepsize = math.sqrt(sum(polys.values()) / (3 * len(points)) )
+    beta = 0.75
     # We need to convert from UV coord system (where (0, 0) is domain center)
     # To image representable form (where (0, 0) is domain start), and have visible results
     # Mapping: (u + u_offset)*scale = x, (v + v_offset)*scale = y 
@@ -588,19 +606,63 @@ class Moving_Least_Squares_Fill():
     u_offset, v_offset = min_u * -1, min_v * -1
     u_length, v_length = max_u - min_u, max_v - min_v
 
-    img = Image.new("L", (math.ceil(scale * u_length), math.ceil(scale * v_length)), "#000000")
+    img = Image.new("L", (math.ceil(scale * u_length), math.ceil(scale * v_length)), "#000000") # Black Fill = Mask
     draw = ImageDraw.Draw(img)
     pix_boundary = []
+    pix_inner_boundary = []
     for u_boundary, v_boundary in zip(U_boundary, V_boundary):
+      u_inner, v_inner = np.array([u_boundary, v_boundary]) + (beta * grid_stepsize * np.array([-1*u_boundary, -1*v_boundary])
+        * (1 / math.sqrt(math.pow(u_boundary, 2) + math.pow(v_boundary, 2))))
+      pix_inner_pos = (scale*(u_inner + u_offset), scale*(v_inner + v_offset))
+      pix_inner_boundary.append(pix_inner_pos)
+
       pix_pos = (scale*(u_boundary + u_offset), scale*(v_boundary + v_offset))
       pix_boundary.append(pix_pos)
-    draw.polygon(pix_boundary, fill="#7F7F7F")
-    draw.point(pix_boundary, fill="#FFFFFF")
-    
+    draw.polygon(pix_boundary, fill="#7F7F7F") # Gray Fill = Opening
+    draw.point(pix_boundary, fill="#CCCCCC") # Light Gray points = Boundary points
+    draw.polygon(pix_inner_boundary, fill="#FFFFFF") # White Fill = Safe
+
+    sample_points = []
+    for u_pos in np.arange(min_u, max_u, grid_stepsize):
+      for v_pos in np.arange(min_v, max_v, grid_stepsize):
+        pix_pos = (scale*(u_pos + u_offset), scale*(v_pos + v_offset))
+        if img.getpixel(pix_pos) == 255:
+          draw.point(pix_pos, fill="#000000") # Black Points = New Sampling Points
+          sample_points.append((u_pos, v_pos))
+
     path_name = hou.hipFile.name().split(".")[0]
-    img.save(path_name + "/" + "test.png")
-
-
+    img.save(path_name + "/" + "see_new_sampling.png")
+    '''
+    E. Fit a surface through this height field using Moving Least Squares
+       For each new sample point p, (u, v), we will learn a function S:
+         S(u, v) = a0 + a1u + a2v + a3u^2 + a4^2 + a5uv 
+       We then use S to compute ideal position of p in 3d space:
+         ideal_p = [u', v', S(u, v)*s]
+       
+       S can be learned via fitness function:
+         E(S) = SUMi_1,N wi(p) (S(pi)-fi)^2
+         where
+            pi = (ui, vi) position of ith point
+            fi = projected distance of ith point
+            wi(p) = e^-alpha*di(p)^1
+                    ---------------
+                        di(p)^2
+            where 
+              di(p) = distance from p to pi in uv space
+       In turn, the solution for a0....5 where E(S) is minimized is:
+         a(p) = (BW(p)B^T)^-1 BW(p)F
+         where
+           B = | 1.....1    |  W = | w1    0 | F = | f1 |
+               | u1....un   |      |   ...   |     | .. |
+               | v1....vn   |      | 0    wn |     | fn |
+               | u1^2..un^2 |
+               | v1^2..vn^2 |  
+               | u1v1..unvn |
+    '''
+    '''
+    for sample_point in sample_points:
+      '''
+    
 
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
