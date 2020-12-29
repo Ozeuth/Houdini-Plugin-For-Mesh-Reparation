@@ -528,6 +528,13 @@ class Moving_Least_Squares_Fill():
     self.points_vicinity = points_vicinity
     self.edges = edges
     self.edges_neighbors = edges
+
+  def uv_to_xy(self, u, v):
+    '''
+    Mapping:
+      (u - u_min) * scale, (v - v_min) * scale
+    '''
+    return ((u - self.u_min) * self.scale, (v - self.v_min) * self.scale)
   
   def fill(self):
     '''
@@ -544,6 +551,7 @@ class Moving_Least_Squares_Fill():
                |           ........           |
                | xn-x_het  yn-y_het  zn-z_het |
     '''
+    # BUG: Problem estimating u, v, s when completely flat
     O = hou.Vector3(0, 0, 0)
     P_boundary = []
     for point in self.points:
@@ -590,9 +598,6 @@ class Moving_Least_Squares_Fill():
        where
          beta = 0.75    
     '''
-    min_u, max_u = np.min(U), np.max(U)
-    min_v, max_v = np.min(V), np.max(V)
-
     # NOTE: We assume area is in 3D, unprojected space
     polys = defaultdict(int)
     for point in points:
@@ -603,24 +608,24 @@ class Moving_Least_Squares_Fill():
     beta = 0.75
     # We need to convert from UV coord system (where (0, 0) is domain center)
     # To image representable form (where (0, 0) is domain start), and have visible results
-    # Mapping: (u + u_offset)*scale = x, (v + v_offset)*scale = y 
-    print((u, v, s), flush=True)
-    scale = 100
-    u_offset, v_offset = min_u * -1, min_v * -1
-    u_length, v_length = max_u - min_u, max_v - min_v
-    print((u_length, v_length), flush=True)
+    self.u_min, self.u_max = np.min(U), np.max(U)
+    self.v_min, self.v_max = np.min(V), np.max(V)
+    self.scale = 100
 
-    img = Image.new("L", (math.ceil(scale * u_length), math.ceil(scale * v_length)), "#000000") # Black Fill = Mask
+    img_x, img_y = self.uv_to_xy(self.u_max, self.v_max)
+    img = Image.new("L", (math.ceil(img_x), math.ceil(img_y)), "#000000") # Black Fill = Mask
     draw = ImageDraw.Draw(img)
+
     pix_boundary = []
     pix_inner_boundary = []
     for u_boundary, v_boundary in zip(U_boundary, V_boundary):
+      # NOTE: This is wrong-- Bad approximation
       u_inner, v_inner = np.array([u_boundary, v_boundary]) + (beta * grid_stepsize * np.array([-1*u_boundary, -1*v_boundary])
         * (1 / math.sqrt(math.pow(u_boundary, 2) + math.pow(v_boundary, 2))))
-      pix_inner_pos = (scale*(u_inner + u_offset), scale*(v_inner + v_offset))
+      pix_inner_pos = self.uv_to_xy(u_inner, v_inner)
       pix_inner_boundary.append(pix_inner_pos)
 
-      pix_pos = (scale*(u_boundary + u_offset), scale*(v_boundary + v_offset))
+      pix_pos = self.uv_to_xy(u_boundary, v_boundary)
       pix_boundary.append(pix_pos)
     draw.polygon(pix_boundary, fill="#7F7F7F") # Gray Fill = Opening
     draw.point(pix_boundary, fill="#CCCCCC") # Light Gray points = Boundary points
@@ -628,10 +633,10 @@ class Moving_Least_Squares_Fill():
 
     sample_points = defaultdict(list)
     u_ind = 0
-    for u_pos in np.arange(min_u, max_u, grid_stepsize):
+    for u_pos in np.arange(self.u_min, self.u_max, grid_stepsize):
       v_ind = 0
-      for v_pos in np.arange(min_v, max_v, grid_stepsize):
-        pix_pos = (scale*(u_pos + u_offset), scale*(v_pos + v_offset))
+      for v_pos in np.arange(self.v_min, self.v_max, grid_stepsize):
+        pix_pos = self.uv_to_xy(u_pos, v_pos)
         if img.getpixel(pix_pos) == 255:
           draw.point(pix_pos, fill="#000000") # Black Points = New Sampling Points
           sample_points[u_ind, v_ind] = (u_pos, v_pos)
@@ -689,6 +694,7 @@ class Moving_Least_Squares_Fill():
         ps = [sample_to_proj_point[u_ind - 1, v_ind - 1], sample_to_proj_point[u_ind, v_ind - 1], 
               sample_to_proj_point[u_ind, v_ind], sample_to_proj_point[u_ind - 1, v_ind]]
         get_poly(geo, ps)
+    print(sample_points, flush=True)
     
 
 class AFT_Fill():
