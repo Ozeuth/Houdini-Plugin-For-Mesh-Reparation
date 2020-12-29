@@ -626,13 +626,17 @@ class Moving_Least_Squares_Fill():
     draw.point(pix_boundary, fill="#CCCCCC") # Light Gray points = Boundary points
     draw.polygon(pix_inner_boundary, fill="#FFFFFF") # White Fill = Safe
 
-    sample_points = []
+    sample_points = defaultdict(list)
+    u_ind = 0
     for u_pos in np.arange(min_u, max_u, grid_stepsize):
+      v_ind = 0
       for v_pos in np.arange(min_v, max_v, grid_stepsize):
         pix_pos = (scale*(u_pos + u_offset), scale*(v_pos + v_offset))
         if img.getpixel(pix_pos) == 255:
           draw.point(pix_pos, fill="#000000") # Black Points = New Sampling Points
-          sample_points.append((u_pos, v_pos))
+          sample_points[u_ind, v_ind] = (u_pos, v_pos)
+        v_ind += 1
+      u_ind += 1
 
     path_name = hou.hipFile.name().split(".")[0]
     img.save(path_name + "/" + "see_new_sampling.png")
@@ -664,9 +668,11 @@ class Moving_Least_Squares_Fill():
                | u1v1..unvn |
     '''
     B = np.concatenate((np.ones(U.shape[0]), U, V, U*U, V*V, U*V)).reshape((6, U.shape[0]))
-    ps = []
-    for sample_point in sample_points:
+    sample_to_proj_point= defaultdict(hou.Point)
+    for uv_ind, sample_point in sample_points.items():
+      u_ind, v_ind = uv_ind
       u_sample, v_sample = sample_point
+
       D = np.sum(np.power((UV-sample_point), 2), axis=1)
       W = np.diag(np.exp(-1*D)/(D))
       A = np.matmul(np.linalg.inv(np.matmul(B, np.matmul(W, B.T))), np.matmul(B, np.matmul(W, F)))
@@ -677,8 +683,13 @@ class Moving_Least_Squares_Fill():
       sample_proj_pos = O + u_sample * u + v_sample * v + s_sample * s
       sample_proj_point = geo.createPoint()
       sample_proj_point.setPosition(sample_proj_pos)
-      ps.append(sample_proj_point)
-    get_poly(geo, ps)
+
+      sample_to_proj_point[u_ind, v_ind] = sample_proj_point
+      if ((u_ind - 1, v_ind - 1) in sample_points and (u_ind - 1, v_ind) in sample_points and (u_ind, v_ind - 1) in sample_points):
+        ps = [sample_to_proj_point[u_ind - 1, v_ind - 1], sample_to_proj_point[u_ind, v_ind - 1], 
+              sample_to_proj_point[u_ind, v_ind], sample_to_proj_point[u_ind - 1, v_ind]]
+        get_poly(geo, ps)
+    
 
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
@@ -1115,6 +1126,6 @@ for i in range(1, len(point_boundaries)):
     '''
     3. Fill large hole with advancing front method
     '''
-    #Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
-    AFT_Fill(geo, points, edges, edges_neighbors).fill()
+    Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
+    #AFT_Fill(geo, points, edges, edges_neighbors).fill()
 node.bypass(True)
