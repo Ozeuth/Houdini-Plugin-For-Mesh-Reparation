@@ -1034,10 +1034,9 @@ class AFT_Fill():
                 break
             for new_poly in new_polys:
               for point_to_delete in points_to_delete:
-                if point_to_delete in new_poly.points():
+                if point_to_delete in new_poly.points() and new_poly not in polys_to_delete:
                   polys_to_delete.append(new_poly)
-            #print(polys_to_delete, flush=True)
-            polys_to_delete = np.unique(np.array(polys_to_delete))
+            polys_to_delete = np.array(polys_to_delete)
             marked_for_deletion.extend(points_to_delete)
             self.geo.deletePrims(polys_to_delete, keep_points=True)
 
