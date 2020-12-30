@@ -551,13 +551,17 @@ class Moving_Least_Squares_Fill():
                |           ........           |
                | xn-x_het  yn-y_het  zn-z_het |
     '''
-    # BUG: Problem estimating u, v, s when completely flat
     O = hou.Vector3(0, 0, 0)
     P_boundary = []
+    coplanar, coplanar_ind = [self.points[0].position()] * (len(self.points)-1), 0
     for point in self.points:
       position = point.position()
       O += position
       P_boundary.append(position)
+      if coplanar_ind >= 1:
+        coplanar[coplanar_ind-1] = position - coplanar[coplanar_ind-1]
+      coplanar_ind += 1
+
     P_vicinity = []
     for point_vicinity in list(set(self.points_vicinity) - set(self.points)):
       position = point_vicinity.position()
@@ -567,10 +571,29 @@ class Moving_Least_Squares_Fill():
     P_boundary, P_vicinity = np.array(P_boundary), np.array(P_vicinity)
     P = np.concatenate((P_boundary, P_vicinity))
     M = P - O
-    MTM = np.matmul(np.transpose(M), M)
-    eigenvalues, eigenvectors = np.linalg.eig(MTM)
-    order = eigenvalues.argsort()
-    u, v, s = eigenvectors[order[2]], eigenvectors[order[1]], eigenvectors[order[0]]
+    
+    scaling = math.ceil(math.log10(len(points)))
+    coplanar = np.array(coplanar)
+    tol = 1e-15 * math.pow(10, scaling * 5)
+    rank = np.linalg.matrix_rank(coplanar, tol=1)
+    # NOTE: default tolerance fails majority of time, chosen tolerance
+    # based on limited testing.
+    is_coplanar = (rank <= 2)
+    if is_coplanar:
+      print("hole boundary coplanar, rank: " + str(rank) + " If this is incorrect, decrease rank tolerance: " + str(tol), flush=True)
+      # If points are coplanar, then s = v1 x v2, u = v1, v = s x u
+      s = np.cross(coplanar[0], coplanar[len(coplanar)-1])
+      s = s / math.sqrt(math.pow(s[0],2) + math.pow(s[1],2) + math.pow(s[2],2))
+      u = coplanar[0]
+      u = u / math.sqrt(math.pow(u[0],2) + math.pow(u[1],2) + math.pow(u[2],2))
+      v = np.cross(s, u)
+    else:
+      print("hole boundary not coplanar, rank: " + str(rank) + " If this is incorrect, increase rank tolerance: " + str(tol), flush=True)
+      # Else, u, v, s can be computed via SVD
+      MTM = np.matmul(np.transpose(M), M)
+      eigenvalues, eigenvectors = np.linalg.eig(MTM)
+      order = eigenvalues.argsort()
+      u, v, s = eigenvectors[order[2]], eigenvectors[order[1]], eigenvectors[order[0]]
     '''
     B. Project each vicinity point p orthographically onto reference plane to get p_
        and distance s. Convert 3D p_ point to 2D (u, v) coordinate
@@ -610,7 +633,7 @@ class Moving_Least_Squares_Fill():
     # To image representable form (where (0, 0) is domain start), and have visible results
     self.u_min, self.u_max = np.min(U), np.max(U)
     self.v_min, self.v_max = np.min(V), np.max(V)
-    self.scale = 100
+    self.scale = int(math.pow(10, scaling))
 
     img_x, img_y = self.uv_to_xy(self.u_max, self.v_max)
     img = Image.new("L", (math.ceil(img_x), math.ceil(img_y)), "#000000") # Black Fill = Mask
@@ -694,9 +717,7 @@ class Moving_Least_Squares_Fill():
         ps = [sample_to_proj_point[u_ind - 1, v_ind - 1], sample_to_proj_point[u_ind, v_ind - 1], 
               sample_to_proj_point[u_ind, v_ind], sample_to_proj_point[u_ind - 1, v_ind]]
         get_poly(geo, ps)
-    print(sample_points, flush=True)
     
-
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
     self.geo = geo
