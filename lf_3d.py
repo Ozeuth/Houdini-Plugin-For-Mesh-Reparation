@@ -518,10 +518,6 @@ class Projection_BiLaplacian_Fill():
         p.setPosition(laplace_fs[ref])
 
 class Moving_Least_Squares_Fill():
-  '''
-  We Follow J Wang, M M Oliverira [2006],
-  filling holes on locally smooth surfaces reconstructed from point clouds
-  '''
   def __init__(self, geo, points, points_vicinity, edges, edges_neighbors):
     self.geo = geo
     self.points = points
@@ -529,15 +525,30 @@ class Moving_Least_Squares_Fill():
     self.edges = edges
     self.edges_neighbors = edges
 
+  def next_clockwise_p(self, p):
+    vs = p.vertices()
+    ps_v2, ps_v4 = [], []
+    for v in vs:
+      prim = v.prim()
+      if prim.type() == hou.primType.Polygon:
+        prim_vs = list(prim.vertices())
+        prim_v_ind = prim_vs.index(v)
+        prim_vs = prim_vs[prim_v_ind:] + prim_vs[:prim_v_ind]
+        ps_v2.append(prim_vs[1].point())
+        ps_v4.append(prim_vs[3].point())
+    next_ps = list(set(ps_v2) - set(ps_v4))
+    assert (len(next_ps) == 1)
+    return next_ps[0]
+
   def uv_to_xy(self, u, v):
-    '''
-    Mapping:
-      (u - u_min) * scale, (v - v_min) * scale
-    '''
+    # Mapping: (u - u_min) * scale, (v - v_min) * scale
     return ((u - self.u_min) * self.scale, (v - self.v_min) * self.scale)
   
   def fill(self):
     '''
+    We Follow J Wang, M M Oliverira [2006],
+    filling holes on locally smooth surfaces reconstructed from point clouds
+
     A. Compute a reference Plane,
        with origin O and coordinates U, V, S
        where
@@ -697,6 +708,7 @@ class Moving_Least_Squares_Fill():
     '''
     B = np.concatenate((np.ones(U.shape[0]), U, V, U*U, V*V, U*V)).reshape((6, U.shape[0]))
     sample_to_proj_point= defaultdict(hou.Point)
+    min_uv = (float('inf'), float('inf'))
     for uv_ind, sample_point in sample_points.items():
       u_ind, v_ind = uv_ind
       u_sample, v_sample = sample_point
@@ -711,12 +723,32 @@ class Moving_Least_Squares_Fill():
       sample_proj_pos = O + u_sample * u + v_sample * v + s_sample * s
       sample_proj_point = geo.createPoint()
       sample_proj_point.setPosition(sample_proj_pos)
+      sample_proj_point.setAttribValue("N", s)
 
       sample_to_proj_point[u_ind, v_ind] = sample_proj_point
       if ((u_ind - 1, v_ind - 1) in sample_points and (u_ind - 1, v_ind) in sample_points and (u_ind, v_ind - 1) in sample_points):
+        min_uv = min((u_ind - 1, v_ind - 1), min_uv)
         ps = [sample_to_proj_point[u_ind - 1, v_ind - 1], sample_to_proj_point[u_ind, v_ind - 1], 
               sample_to_proj_point[u_ind, v_ind], sample_to_proj_point[u_ind - 1, v_ind]]
-        get_poly(geo, ps)
+        poly = get_poly(geo, ps)
+    
+    '''
+    We now have the original mesh and a new patch mesh. This forms an island hole
+
+    We Follow F Bi, Y Hu, X Chen, Y Ma [2013],
+    Island hole automatic filling algorithm in triangular meshes
+    F. Find detect boundary of island hole
+    '''
+    start_p = sample_to_proj_point[min_uv]
+    point_inner = [start_p]
+    curr_p = self.next_clockwise_p(start_p)
+
+    while curr_p != start_p:
+      point_inner.append(curr_p)
+      curr_p = self.next_clockwise_p(curr_p)
+    
+
+
     
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
