@@ -151,6 +151,25 @@ def get_normal(geo, p):
   p.setAttribValue("N", normal)
   return normal
 
+def get_clockwise_neighbors(p, p_a_b):
+  # p_1 = left of p, p_2 = right of p
+  p_a, p_b = p_a_b
+  p_1, p_2 = None, None
+  for prim in p.prims():
+    if prim.type() == hou.primType.Polygon:
+      ps = []
+      for v in prim.vertices():
+        ps.append(v.point())
+        
+      if p_a in ps or p_b in ps:
+        p_i = ps.index(p)
+        ps =  ps[p_i:] + ps[:p_i]
+        assert(ps[0] == p)
+        p_2 = ps[1] if (ps[1] == p_a or ps[1] == p_b) else p_2
+        p_1 = ps[len(ps) - 1] if (ps[len(ps) - 1] == p_a or ps[len(ps) - 1] == p_b) else p_1
+  assert(p_1 != None and p_2 != None)
+  return p_1, p_2
+
 class VirtualPolygon():
   # class to avoid generation of Houdini Polygons during intermediary phases
   def __init__(self, virtual, data):
@@ -760,18 +779,20 @@ class Moving_Least_Squares_Fill():
     G. Find the two points on the inner boundary furthest from one another
     '''
     max_dist, max_dist_ps = 0, None
-    total_ps = len(inner_ps)
+    total_ps_inner = len(inner_ps)
+    p_1_inner_ind, p_2_inner_ind = None, None
     for i, inner_p in enumerate(inner_ps):
       pos = inner_p.position()
-      start_ind = (i + int(0.4 * total_ps)) % total_ps
-      end_ind = (i + int(0.6 * total_ps)) % total_ps
+      start_ind = (i + int(0.4 * total_ps_inner)) % total_ps_inner
+      end_ind = (i + int(0.6 * total_ps_inner)) % total_ps_inner
 
-      mid_ind = (total_ps - 1) if end_ind < start_ind else end_ind
+      mid_ind = (total_ps_inner - 1) if end_ind < start_ind else end_ind
       for ind in range(start_ind, mid_ind):
         other_p = inner_ps[ind]
         curr_dist = (pos - other_p.position()).length()
         if curr_dist > max_dist:
           max_dist, max_dist_ps = curr_dist, (inner_p, other_p)
+          p_1_inner_ind, p_2_inner_ind = i, ind
 
       mid_ind = 0 if end_ind < start_ind else end_ind
       for ind in range(mid_ind, end_ind):
@@ -779,58 +800,66 @@ class Moving_Least_Squares_Fill():
         curr_dist = (pos - other_p.position()).length()
         if curr_dist > max_dist:
           max_dist, max_dist_ps = curr_dist, (inner_p, other_p)
-    print(max_dist_ps, flush=True)
+          p_1_inner_ind, p_2_inner_ind = i, ind
+
     '''
-    H. For each of the points, find the closest two neighboring points on the outer boundary
+    H. Find each of the points, find the closest point on the outer boundary
     '''
-    pos_1 = max_dist_ps[0].position()
-    pos_2 = max_dist_ps[1].position()
+    p_1_inner, p_2_inner = max_dist_ps[0], max_dist_ps[1]
+    pos_1 = p_1_inner.position()
+    pos_2 = p_2_inner.position()
     min_dist_1, min_dist_2 = float('inf'), float('inf')
-    ind_1, ind_2 = None, None
-    for i, point in enumerate(self.points):
+    p_1_outer_ind, p_2_outer_ind = None, None
+    p_1_outer, p_2_outer = None, None
+
+    p_a, p_b = self.points[len(self.points)-1], self.points[1]
+    p_1, p_2 = get_clockwise_neighbors(self.points[0], (p_a, p_b))
+    outer_ps = self.points[::-1] if (p_a == p_1 and p_b == p_2) else self.points
+    total_ps_outer = len(outer_ps)
+    for i, point in enumerate(outer_ps):
       pos = point.position()
       if (pos - pos_1).length() < min_dist_1:
-        ind_1 = i
+        p_1_outer_ind = i
+        p_1_outer = point
         min_dist_1 = (pos - pos_1).length()
       if (pos - pos_2).length() < min_dist_2:
-        ind_2 = i
+        p_2_outer_ind = i
+        p_2_outer = point
         min_dist_2 = (pos - pos_2).length()
-    
-    ps_1 = (self.points[0 if ind_1 == len(self.points)-1 else ind_1 + 1], self.points[ind_1], max_dist_ps[0])
-    ps_2 = (self.points[0 if ind_2 == len(self.points)-1 else ind_2 + 1], self.points[ind_2], max_dist_ps[1])
     '''
-    ps_1 = (max_dist_ps[0], self.points[ind_1], self.points[0 if ind_1 == len(self.points)-1 else ind_1 + 1])
-    ps_2 = (max_dist_ps[1], self.points[ind_2], self.points[0 if ind_2 == len(self.points)-1 else ind_2 + 1])
+    G. Connect the inner points with their respective outer point.
+       This forms two regular holes, which can be filled by any other hole filling method
     '''
-    get_poly(geo, ps_1)
-    get_poly(geo, ps_2)
+    points_outer = outer_ps[p_1_outer_ind:] + outer_ps[:p_1_outer_ind]
+    if p_1_outer_ind < p_2_outer_ind:
+      p_2_outer_ind = p_2_outer_ind - p_1_outer_ind
+    else:
+      p_2_outer_ind = total_ps_outer - p_1_outer_ind + p_2_outer_ind
+    p_1_outer_ind = 0
 
+    points_inner = inner_ps[p_1_inner_ind:] + inner_ps[:p_1_inner_ind]
+    if p_1_inner_ind < p_2_inner_ind:
+      p_2_inner_ind = p_2_inner_ind - p_1_inner_ind
+    else:
+      p_2_inner_ind = total_ps_inner - p_1_inner_ind + p_2_inner_ind
+    p_1_inner_ind = 0
+
+    p_1_to_p_2_outer = np.array(points_outer[:p_2_outer_ind])
+    p_2_to_p_1_outer = np.array(points_outer[p_2_outer_ind:])
+    p_1_to_p_2_inner = np.array(points_inner[:p_2_inner_ind])
+    p_2_to_p_1_inner = np.array(points_inner[p_2_inner_ind:])
+    points_boundary_1 = np.append(p_1_to_p_2_outer, np.append([p_2_outer, p_2_inner], p_1_to_p_2_inner[::-1]))
+    points_boundary_2 = np.append(p_2_to_p_1_outer, np.append([p_1_outer, p_1_inner], p_2_to_p_1_inner[::-1]))
+    print(points_boundary_1, flush=True)
+    print(points_boundary_2, flush=True)
     
+
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
     self.geo = geo
     self.points = points
     self.edges = edges
     self.edges_neighbors = edges_neighbors
-
-  def clockwise_neighbors(self, p, points_neighbors):
-    # p_1 = left of p, p_2 = right of p
-    p_a, p_b = points_neighbors[p]
-    p_1, p_2 = None, None
-    for prim in p.prims():
-      if prim.type() == hou.primType.Polygon:
-        ps = []
-        for v in prim.vertices():
-          ps.append(v.point())
-          
-        if p_a in ps or p_b in ps:
-          p_i = ps.index(p)
-          ps =  ps[p_i:] + ps[:p_i]
-          assert(ps[0] == p)
-          p_2 = ps[1] if (ps[1] == p_a or ps[1] == p_b) else p_2
-          p_1 = ps[len(ps) - 1] if (ps[len(ps) - 1] == p_a or ps[len(ps) - 1] == p_b) else p_1
-    assert(p_1 != None and p_2 != None)
-    return p_1, p_2
 
   def get_angle(self, p, points_neighbors):
     p_1, p_2 = points_neighbors[p]
@@ -954,7 +983,7 @@ class AFT_Fill():
   def lhs_merge(self, p, new_point, point_rhs, p_1, p_2, points_angle, points_neighbors):
     # bisection: new_point = new_point, point_rhs = p_2
     # trisection: new_point = new_point_1, point_rhs = new_point_2
-    p_a, _ = self.clockwise_neighbors(new_point, points_neighbors)
+    p_a, _ = get_clockwise_neighbors(new_point, points_neighbors[new_point])
     points_neighbors[p_1].remove(p)
     points_neighbors[p_2].remove(p)
     get_poly(self.geo, [new_point, p, p_1])
@@ -975,7 +1004,7 @@ class AFT_Fill():
   def rhs_merge(self, p, new_point, point_lhs, p_1, p_2, points_angle, points_neighbors):
     # bisection: new_point = new_point, points_lhs = p_1
     # trisection: new_point = new_point_2, point_lhs = new_point_1
-    _, p_b = self.clockwise_neighbors(new_point, points_neighbors)
+    _, p_b = get_clockwise_neighbors(new_point, points_neighbors[new_point])
     points_neighbors[p_1].remove(p)
     points_neighbors[p_2].remove(p)
     get_poly(self.geo, [new_point, p, point_lhs])
@@ -998,7 +1027,7 @@ class AFT_Fill():
     # bisection: new_point = new_point, point_other_l = p_1, point_other_r = p_2
     # trisection_left: new_point = new_point_1, point_other_l = p_1, point_other_r = new_point_2
     # trisection_right: new_point = new_point_2, point_other_l = new_point_1, point_other_r = p_2
-    p_a, p_b = self.clockwise_neighbors(new_point, points_neighbors)
+    p_a, p_b = get_clockwise_neighbors(new_point, points_neighbors[new_point])
     points_neighbors[p_1].remove(p)
     points_neighbors[p_2].remove(p)
     get_poly(self.geo, [new_point, p, point_other_l])
@@ -1072,7 +1101,7 @@ class AFT_Fill():
           p = random.choice(p_roulette)
           min_angle = points_angle[p]
         
-        p_1, p_2 = self.clockwise_neighbors(p, points_neighbors)
+        p_1, p_2 = get_clockwise_neighbors(p, points_neighbors[p])
         '''
         B. Correct normal
         '''
@@ -1112,7 +1141,7 @@ class AFT_Fill():
                 new_point, is_merged = p_, True
                 break 
           if is_merged:
-            p_a, p_b = self.clockwise_neighbors(new_point, points_neighbors)
+            p_a, p_b = get_clockwise_neighbors(new_point, points_neighbors[new_point])
             if p_1 == p_b:
               self.lhs_merge(p, new_point, p_2, p_1, p_2, points_angle, points_neighbors)
             elif p_2 == p_a:
@@ -1169,7 +1198,7 @@ class AFT_Fill():
             new_point_1 = new_point_1_ if new_point_1_ != None else new_point_1
             new_point_2 = new_point_2_ if new_point_2_ != None else new_point_2
           if is_merged_1:
-            p_a, p_b = self.clockwise_neighbors(new_point_1, points_neighbors) 
+            p_a, p_b = get_clockwise_neighbors(new_point_1, points_neighbors[new_point_1])
             if p_1 == p_b:
               self.lhs_merge(p, new_point_1, new_point_2, p_1, p_2, points_angle, points_neighbors)
             else:
@@ -1178,7 +1207,7 @@ class AFT_Fill():
               angle_loops.extend(angle_loops_new)
               break
           elif is_merged_2:
-            p_a, p_b = self.clockwise_neighbors(new_point_2, points_neighbors)
+            p_a, p_b = get_clockwise_neighbors(new_point_2, points_neighbors[new_point_2])
             if p_2 == p_a:
               self.rhs_merge(p, new_point_2, new_point_1, p_1, p_2, points_angle, points_neighbors)  
             else:
