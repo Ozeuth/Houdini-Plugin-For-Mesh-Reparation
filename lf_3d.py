@@ -200,46 +200,52 @@ class VirtualPolygon():
     return None
 
 class MinTriangulation():
-  def __init__(self, geo, points, cache_costs=None):
-    if cache_costs is None:
-      cache_costs = {}
+  def __init__(self, geo, points, cache_lengths=None):
+    if cache_lengths is None:
+      cache_lengths = defaultdict(list)
       for i in range(len(points)):
         for j in range(i+1, len(points)):
           p_i, p_j = points[i], points[j]
           pi_pos = p_i.position()
           pj_pos = p_j.position()
-          cache_costs[unord_hash(p_i.number(), p_j.number())] = (pi_pos - pj_pos).length()
+          cache_lengths[unord_hash(p_i.number(), p_j.number())] = (pi_pos - pj_pos).length()
     self.geo = geo
     self.points = points
-    self.cache_costs = cache_costs
+    self.cache_lengths = cache_lengths
+    self.cache_costs = defaultdict(list)
 
   def tri_cost(self, i, j, k, is_mwt=True):
-    eik_len = self.cache_costs[unord_hash(self.points[i].number(), self.points[k].number())]
-    ekj_len = self.cache_costs[unord_hash(self.points[k].number(), self.points[j].number())]
+    eik_len = self.cache_lengths[unord_hash(self.points[i].number(), self.points[k].number())]
+    ekj_len = self.cache_lengths[unord_hash(self.points[k].number(), self.points[j].number())]
     if is_mwt:
       return eik_len + ekj_len
     else:
-      eij_len = self.cache_costs[unord_hash(i, j)]
+      eij_len = self.cache_lengths[unord_hash(self.points[i].number(), self.points[j].number())]
       s = eij_len + eik_len + ekj_len / 2
       return math.sqrt(s*(s-eij_len)*(s-eik_len)*(s-ekj_len))
 
   def tri_min(self, i, j):
-    if j <= i+1:
-      return (0, [])
+    if (i, j) in self.cache_costs:
+      return self.cache_costs[(i, j)]
     else:
-      min_cost = float('inf')
-      potential_polys = {}
-      for k in range(i+1, j):
-        cost_center = self.tri_cost(i, j, k)
-        min_cost_left, min_polys_left = self.tri_min(i, k)
-        min_cost_right, min_polys_right = self.tri_min(k, j)
-        curr_cost = cost_center + min_cost_left + min_cost_right
-        curr_polys = [VirtualPolygon(True, [self.points[i], self.points[j], self.points[k]])] + min_polys_left + min_polys_right
-        if curr_cost < min_cost:
-          min_cost = curr_cost
-          potential_polys[curr_cost] = curr_polys
-      min_polys = potential_polys[min_cost]
-    return min_cost, min_polys
+      if j <= i+1:
+        self.cache_costs[(i, j)] = (0, [])
+        return (0, [])
+      else:
+        min_cost = float('inf')
+        potential_polys = {}
+        for k in range(i+1, j):
+          cost_center = self.tri_cost(i, j, k)
+          min_cost_left, min_polys_left = self.tri_min(i, k)
+          min_cost_right, min_polys_right = self.tri_min(k, j)
+          curr_cost = cost_center + min_cost_left + min_cost_right
+          curr_polys = [VirtualPolygon(True, [self.points[i], self.points[j], self.points[k]])] + min_polys_left + min_polys_right
+          if curr_cost < min_cost:
+            min_cost = curr_cost
+            potential_polys[curr_cost] = curr_polys
+        min_polys = potential_polys[min_cost]
+      self.cache_costs[(i, j)] = (min_cost, min_polys)
+      return min_cost, min_polys
 
   def min_triangulation(self, generate=True):
     _, min_polys = self.tri_min(0, len(self.points)-1)
@@ -308,7 +314,7 @@ class Projection_BiLaplacian_Fill():
         pi_pos = p_i.position()
         pj_pos = p_j.position()
         e_lens_hashed[unord_hash(p_i.number(), p_j.number())] = (pi_pos - pj_pos).length()
-    min_polys = MinTriangulation(self.geo, self.points, cache_costs=e_lens_hashed).min_triangulation(generate=False)
+    min_polys = MinTriangulation(self.geo, self.points, cache_lengths=e_lens_hashed).min_triangulation(generate=False)
     '''
     B. Conduct Triangle Splitting
       We split the minimum polygons with centroid-based method if:
