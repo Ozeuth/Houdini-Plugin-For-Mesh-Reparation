@@ -586,7 +586,7 @@ class Moving_Least_Squares_Fill():
     scaling = math.ceil(math.log10(len(points)))
     coplanar = np.array(coplanar)
     tol = 1e-15 * math.pow(10, scaling * 5)
-    rank = np.linalg.matrix_rank(coplanar, tol=1)
+    rank = np.linalg.matrix_rank(coplanar, tol=tol)
     # NOTE: default tolerance fails majority of time, chosen tolerance
     # based on limited testing.
     is_coplanar = (rank <= 2)
@@ -723,31 +723,81 @@ class Moving_Least_Squares_Fill():
       sample_proj_pos = O + u_sample * u + v_sample * v + s_sample * s
       sample_proj_point = geo.createPoint()
       sample_proj_point.setPosition(sample_proj_pos)
-      sample_proj_point.setAttribValue("N", s)
+      sample_proj_point.setAttribValue("N", hou.Vector3(s).normalized())
 
       sample_to_proj_point[u_ind, v_ind] = sample_proj_point
       if ((u_ind - 1, v_ind - 1) in sample_points and (u_ind - 1, v_ind) in sample_points and (u_ind, v_ind - 1) in sample_points):
         min_uv = min((u_ind - 1, v_ind - 1), min_uv)
+        ps = [sample_to_proj_point[u_ind - 1, v_ind], sample_to_proj_point[u_ind, v_ind],
+              sample_to_proj_point[u_ind, v_ind - 1], sample_to_proj_point[u_ind - 1, v_ind - 1]]
+        '''
         ps = [sample_to_proj_point[u_ind - 1, v_ind - 1], sample_to_proj_point[u_ind, v_ind - 1], 
-              sample_to_proj_point[u_ind, v_ind], sample_to_proj_point[u_ind - 1, v_ind]]
+              sample_to_proj_point[u_ind, v_ind], sample_to_proj_point[u_ind - 1, v_ind]]'''
         poly = get_poly(geo, ps)
-    
+      
     '''
     We now have the original mesh and a new patch mesh. This forms an island hole
 
     We Follow F Bi, Y Hu, X Chen, Y Ma [2013],
     Island hole automatic filling algorithm in triangular meshes
-    F. Find detect boundary of island hole
+    F. Detect inner boundary points
     '''
     start_p = sample_to_proj_point[min_uv]
-    point_inner = [start_p]
+    inner_ps = [start_p]
     curr_p = self.next_clockwise_p(start_p)
 
     while curr_p != start_p:
-      point_inner.append(curr_p)
+      inner_ps.append(curr_p)
       curr_p = self.next_clockwise_p(curr_p)
     
+    '''
+    G. Find the two points on the inner boundary furthest from one another
+    '''
+    max_dist, max_dist_ps = 0, None
+    total_ps = len(inner_ps)
+    for i, inner_p in enumerate(inner_ps):
+      pos = inner_p.position()
+      start_ind = (i + int(0.4 * total_ps)) % total_ps
+      end_ind = (i + int(0.6 * total_ps)) % total_ps
 
+      mid_ind = (total_ps - 1) if end_ind < start_ind else end_ind
+      for ind in range(start_ind, mid_ind):
+        other_p = inner_ps[ind]
+        curr_dist = (pos - other_p.position()).length()
+        if curr_dist > max_dist:
+          max_dist, max_dist_ps = curr_dist, (inner_p, other_p)
+
+      mid_ind = 0 if end_ind < start_ind else end_ind
+      for ind in range(mid_ind, end_ind):
+        other_p = inner_ps[ind]
+        curr_dist = (pos - other_p.position()).length()
+        if curr_dist > max_dist:
+          max_dist, max_dist_ps = curr_dist, (inner_p, other_p)
+    print(max_dist_ps, flush=True)
+    '''
+    H. For each of the points, find the closest two neighboring points on the outer boundary
+    '''
+    pos_1 = max_dist_ps[0].position()
+    pos_2 = max_dist_ps[1].position()
+    min_dist_1, min_dist_2 = float('inf'), float('inf')
+    ind_1, ind_2 = None, None
+    for i, point in enumerate(self.points):
+      pos = point.position()
+      if (pos - pos_1).length() < min_dist_1:
+        ind_1 = i
+        min_dist_1 = (pos - pos_1).length()
+      if (pos - pos_2).length() < min_dist_2:
+        ind_2 = i
+        min_dist_2 = (pos - pos_2).length()
+    
+    ps_1 = (self.points[0 if ind_1 == len(self.points)-1 else ind_1 + 1], self.points[ind_1], max_dist_ps[0])
+    ps_2 = (self.points[0 if ind_2 == len(self.points)-1 else ind_2 + 1], self.points[ind_2], max_dist_ps[1])
+    '''
+    ps_1 = (max_dist_ps[0], self.points[ind_1], self.points[0 if ind_1 == len(self.points)-1 else ind_1 + 1])
+    ps_2 = (max_dist_ps[1], self.points[ind_2], self.points[0 if ind_2 == len(self.points)-1 else ind_2 + 1])
+    '''
+    get_poly(geo, ps_1)
+    get_poly(geo, ps_2)
 
     
 class AFT_Fill():
