@@ -7,7 +7,9 @@ import random
 import copy
 from collections import defaultdict
 from PIL import Image, ImageDraw
+import time
 
+is_debug = True
 node = hou.pwd()
 geo = node.geometry()
 
@@ -570,6 +572,7 @@ class Moving_Least_Squares_Fill():
     return ((u - self.u_min) * self.scale, (v - self.v_min) * self.scale)
   
   def fill(self):
+    if is_debug: start = time.time()
     '''
     We Follow J Wang, M M Oliverira [2006],
     filling holes on locally smooth surfaces reconstructed from point clouds
@@ -759,6 +762,7 @@ class Moving_Least_Squares_Fill():
         ps = [sample_to_proj_point[u_ind - 1, v_ind - 1], sample_to_proj_point[u_ind, v_ind - 1], 
               sample_to_proj_point[u_ind, v_ind], sample_to_proj_point[u_ind - 1, v_ind]]'''
         poly = get_poly(geo, ps)
+    if is_debug: print("Island patch generated in: " + str(time.time() - start), flush=True)
       
     '''
     We now have the original mesh and a new patch mesh. This forms an island hole
@@ -767,6 +771,7 @@ class Moving_Least_Squares_Fill():
     Island hole automatic filling algorithm in triangular meshes
     F. Detect inner boundary points
     '''
+    if is_debug: start = time.time()
     start_p = sample_to_proj_point[min_uv]
     inner_ps = [start_p]
     curr_p = self.next_clockwise_p(start_p)
@@ -828,7 +833,7 @@ class Moving_Least_Squares_Fill():
         min_dist_2 = (pos - pos_2).length()
     '''
     G. Connect the inner points with their respective outer point.
-       This forms two regular holes, which can be filled by any other hole filling method
+       This forms two regular holes
     '''
     points_outer = outer_ps[p_1_outer_ind:] + outer_ps[:p_1_outer_ind]
     if p_1_outer_ind < p_2_outer_ind:
@@ -844,14 +849,44 @@ class Moving_Least_Squares_Fill():
       p_2_inner_ind = total_ps_inner - p_1_inner_ind + p_2_inner_ind
     p_1_inner_ind = 0
 
-    p_1_to_p_2_outer = np.array(points_outer[:p_2_outer_ind])
-    p_2_to_p_1_outer = np.array(points_outer[p_2_outer_ind:])
-    p_1_to_p_2_inner = np.array(points_inner[:p_2_inner_ind])
-    p_2_to_p_1_inner = np.array(points_inner[p_2_inner_ind:])
-    points_boundary_1 = np.append(p_1_to_p_2_outer, np.append([p_2_outer, p_2_inner], p_1_to_p_2_inner[::-1]))
-    points_boundary_2 = np.append(p_2_to_p_1_outer, np.append([p_1_outer, p_1_inner], p_2_to_p_1_inner[::-1]))
-    print(points_boundary_1, flush=True)
-    print(points_boundary_2, flush=True)
+    p_1_to_p_2_outer = np.append(np.array(points_outer[:p_2_outer_ind]), [p_2_outer])
+    p_2_to_p_1_outer = np.append(np.array(points_outer[p_2_outer_ind:]), [p_1_outer])
+    p_1_to_p_2_inner = np.append(np.array(points_inner[:p_2_inner_ind]), [p_2_inner])
+    p_2_to_p_1_inner = np.append(np.array(points_inner[p_2_inner_ind:]), [p_1_inner])
+
+    p_1_to_p_2_inner_rev = p_1_to_p_2_inner[::-1]
+    p_2_to_p_1_inner_rev = p_2_to_p_1_inner[::-1]
+    '''
+    H. We can split the two regular holes to more holes, depending on the size of the hole
+       Fill the holes using any method
+    '''
+    max_boundary_size = 200
+    boundaries = [(p_1_to_p_2_outer, p_1_to_p_2_inner_rev), (p_2_to_p_1_outer, p_2_to_p_1_inner_rev)] # outer, inner
+    num_split = 0
+    while boundaries:
+      outer, inner = boundaries.pop()
+      if len(outer) + len(inner) > max_boundary_size:
+        inner_ind = int(math.floor(len(inner) / 2))
+        inner_point = inner[inner_ind]
+        inner_pos = inner_point.position()
+
+        min_dist = float('inf')
+        for i, point in enumerate(outer):
+          pos = point.position()
+          if (inner_pos - pos).length() < min_dist:
+            outer_ind, outer_point = i, point
+            outer_pos = outer_point.position()
+            min_dist = (inner_pos - pos).length()
+        inner_1 = np.append(inner[:inner_ind], [inner_point])
+        inner_2 = inner[inner_ind:]
+        outer_1 = outer[outer_ind:]
+        outer_2 = np.append(outer[:outer_ind], [outer_point])
+        boundaries.append((outer_1, inner_1))
+        boundaries.append((outer_2, inner_2))
+      else:
+        num_split += 1
+        MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
+    if is_debug: print("island hole filled in " + str(time.time() - start) + " with " + str(num_split) + " splits", flush=True)
     
 
 class AFT_Fill():
