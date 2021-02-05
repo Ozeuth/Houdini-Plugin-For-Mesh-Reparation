@@ -613,7 +613,7 @@ class Moving_Least_Squares_Fill():
     
     scaling = math.ceil(math.log10(len(points)))
     coplanar = np.array(coplanar)
-    tol = 1e-15 * math.pow(10, scaling * 5)
+    tol = 1e-15 * math.pow(10, scaling * rank_factor)
     rank = np.linalg.matrix_rank(coplanar, tol=tol)
     # NOTE: default tolerance fails majority of time, chosen tolerance
     # based on limited testing.
@@ -672,7 +672,7 @@ class Moving_Least_Squares_Fill():
     # To image representable form (where (0, 0) is domain start), and have visible results
     self.u_min, self.u_max = np.min(U), np.max(U)
     self.v_min, self.v_max = np.min(V), np.max(V)
-    self.scale = int(math.pow(10, scaling))
+    self.scale = int(math.pow(10, scaling * scale_factor))
 
     img_x, img_y = self.uv_to_xy(self.u_max, self.v_max)
     img = Image.new("L", (math.ceil(img_x), math.ceil(img_y)), "#000000") # Black Fill = Mask
@@ -1271,6 +1271,12 @@ class AFT_Fill():
     self.geo.deletePoints(marked_for_deletion)
 
 # ------------ Main Code ------------ #
+# - Fill Type Parameters
+small = hou.session.find_parm(hou.parent(), "low_small_type")
+med = hou.session.find_parm(hou.parent(), "low_med_type")
+large = hou.session.find_parm(hou.parent(), "low_large_type")
+
+# - Improved AFT Parameters
 alpha = hou.session.find_parm(hou.parent(), "low_alpha_beta")
 beta = 1 - alpha
 w1 = hou.session.find_parm(hou.parent(), "low_w1_w2")
@@ -1281,6 +1287,10 @@ is_angle_threshold = bool(hou.session.find_parm(hou.parent(), "isAngle"))
 angle_threshold = hou.session.find_parm(hou.parent(), "low_angle_threshold")
 is_point_threshold = bool(hou.session.find_parm(hou.parent(), "isDistance"))
 point_threshold = hou.session.find_parm(hou.parent(), "low_distance_threshold")
+
+# - MLS with MWT Parameters
+rank_factor = hou.session.find_parm(hou.parent(), "low_rank_factor")
+scale_factor = hou.session.find_parm(hou.parent(), "low_scale_factor")
 
 # NOTE: points ordered, but ordering breaks after deletion.
 #       Min triangulation relies on ordering
@@ -1294,17 +1304,22 @@ for i in range(1, len(point_boundaries)):
     '''
     1. Fill small holes with centroid-based method
     '''
-    MinTriangulation(geo, points).min_triangulation(generate=True)
-    #Centroid_Fill(geo, points, edges).fill()
-  elif len(points) <= 15:
+    if small == 0:
+      MinTriangulation(geo, points).min_triangulation(generate=True)
+    else:
+      Centroid_Fill(geo, points, edges).fill()
+  elif len(points) <= 20:
     '''
     2. Fill Medium hole with projection-based method
     '''
-    Projection_BiLaplacian_Fill(geo, points, edges, edges_neighbors).fill()
+    if med == 0:
+      Projection_BiLaplacian_Fill(geo, points, edges, edges_neighbors).fill()
   else:
     '''
     3. Fill large hole with advancing front method
     '''
-    Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
-    #AFT_Fill(geo, points, edges, edges_neighbors).fill()
+    if large == 0:
+      Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
+    else:
+      AFT_Fill(geo, points, edges, edges_neighbors).fill()
 node.bypass(True)
