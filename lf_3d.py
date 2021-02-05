@@ -488,7 +488,7 @@ class Projection_BiLaplacian_Fill():
         | fd_j |   | vd_j |
         | fd_k |   | vd_k |
     where
-            | pi_pos[d]  if pi is not a generated point
+             | pi_pos[d]  if pi is not a generated point
       vd_i = | 0          otherwise
     '''    
     for edge in self.edges:
@@ -619,7 +619,7 @@ class Moving_Least_Squares_Fill():
     # based on limited testing.
     is_coplanar = (rank <= 2)
     if is_coplanar:
-      print("hole boundary coplanar, rank: " + str(rank) + " If this is incorrect, decrease rank tolerance: " + str(tol), flush=True)
+      print("hole boundary coplanar, rank: " + str(rank) + " If this is incorrect, decrease rank tolerance factor: " + str(tol), flush=True)
       # If points are coplanar, then s = v1 x v2, u = v1, v = s x u
       s = np.cross(coplanar[0], coplanar[len(coplanar)-1])
       s = s / math.sqrt(math.pow(s[0],2) + math.pow(s[1],2) + math.pow(s[2],2))
@@ -627,7 +627,7 @@ class Moving_Least_Squares_Fill():
       u = u / math.sqrt(math.pow(u[0],2) + math.pow(u[1],2) + math.pow(u[2],2))
       v = np.cross(s, u)
     else:
-      print("hole boundary not coplanar, rank: " + str(rank) + " If this is incorrect, increase rank tolerance: " + str(tol), flush=True)
+      print("hole boundary not coplanar, rank: " + str(rank) + " If this is incorrect, increase rank tolerance factor: " + str(tol), flush=True)
       # Else, u, v, s can be computed via SVD
       MTM = np.matmul(np.transpose(M), M)
       eigenvalues, eigenvectors = np.linalg.eig(MTM)
@@ -710,7 +710,7 @@ class Moving_Least_Squares_Fill():
     '''
     E. Fit a surface through this height field using Moving Least Squares
        For each new sample point p, (u, v), we will learn a function S:
-         S(u, v) = a0 + a1u + a2v + a3u^2 + a4^2 + a5uv 
+         S(u, v) = a0 + a1u + a2v + a3u^2 + a4v^2 + a5uv 
        We then use S to compute ideal position of p in 3d space:
          ideal_p = [u', v', S(u, v)*s]
        
@@ -719,7 +719,7 @@ class Moving_Least_Squares_Fill():
          where
             pi = (ui, vi) position of ith point
             fi = projected distance of ith point
-            wi(p) = e^-alpha*di(p)^1
+            wi(p) = e^-alpha*di(p)^2
                     ---------------
                         di(p)^2
             where 
@@ -766,7 +766,7 @@ class Moving_Least_Squares_Fill():
       
     '''
     We now have the original mesh and a new patch mesh. This forms an island hole
-
+    
     We Follow F Bi, Y Hu, X Chen, Y Ma [2013],
     Island hole automatic filling algorithm in triangular meshes
     F. Detect inner boundary points
@@ -888,7 +888,6 @@ class Moving_Least_Squares_Fill():
         MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
     if is_debug: print("island hole filled in " + str(time.time() - start) + " with " + str(num_split) + " splits", flush=True)
     
-
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
     self.geo = geo
@@ -1295,7 +1294,8 @@ for i in range(1, len(point_boundaries)):
     '''
     1. Fill small holes with centroid-based method
     '''
-    Centroid_Fill(geo, points, edges).fill()
+    MinTriangulation(geo, points).min_triangulation(generate=True)
+    #Centroid_Fill(geo, points, edges).fill()
   elif len(points) <= 15:
     '''
     2. Fill Medium hole with projection-based method
