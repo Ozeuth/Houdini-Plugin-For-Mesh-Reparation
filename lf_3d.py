@@ -734,6 +734,7 @@ class Moving_Least_Squares_Fill():
                | v1^2..vn^2 |  
                | u1v1..unvn |
     '''
+    patch_points = []
     B = np.concatenate((np.ones(U.shape[0]), U, V, U*U, V*V, U*V)).reshape((6, U.shape[0]))
     sample_to_proj_point= defaultdict(hou.Point)
     min_uv = (float('inf'), float('inf'))
@@ -753,6 +754,7 @@ class Moving_Least_Squares_Fill():
       sample_proj_point.setPosition(sample_proj_pos)
       sample_proj_point.setAttribValue("N", hou.Vector3(s).normalized())
 
+      patch_points.append(sample_proj_point)
       sample_to_proj_point[u_ind, v_ind] = sample_proj_point
       if ((u_ind - 1, v_ind - 1) in sample_points and (u_ind - 1, v_ind) in sample_points and (u_ind, v_ind - 1) in sample_points):
         min_uv = min((u_ind - 1, v_ind - 1), min_uv)
@@ -887,6 +889,7 @@ class Moving_Least_Squares_Fill():
         num_split += 1
         MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
     if is_debug: print("island hole filled in " + str(time.time() - start) + " with " + str(num_split) + " splits", flush=True)
+    return patch_points
     
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
@@ -1111,6 +1114,8 @@ class AFT_Fill():
     emergency_stop = False
     marked_for_deletion = []
     points_loops, angle_loops = [points_neighbors], [points_angle]
+
+    patch_points = []
     while len(points_loops) > 0 and not emergency_stop:
       points_neighbors, points_angle = points_loops[0], angle_loops[0]
       i = 0
@@ -1194,6 +1199,7 @@ class AFT_Fill():
             points_angle[new_point] = self.get_angle(new_point, points_neighbors)
             points_angle[p_1] = self.get_angle(p_1, points_neighbors)
             points_angle[p_2] = self.get_angle(p_2, points_neighbors)
+            patch_points.append(new_point)
         else:
           new_points, new_polys = self.get_Nsectors(p, p_1, p_2, 3)
           new_point_1, new_point_2 = new_points
@@ -1220,7 +1226,12 @@ class AFT_Fill():
                 else:
                   new_point_1_, is_merged_1 = new_point_1, False
                   points_to_delete.remove(new_point_1)
-                break
+                
+            if new_point_1 not in points_to_delete:
+              patch_points.append(new_point_1)
+            if new_point_2 not in points_to_delete:
+              patch_points.append(new_point_2)
+
             for new_poly in new_polys:
               for point_to_delete in points_to_delete:
                 if point_to_delete in new_poly.points() and new_poly not in polys_to_delete:
@@ -1269,6 +1280,7 @@ class AFT_Fill():
       angle_loops.remove(points_angle)
 
     self.geo.deletePoints(marked_for_deletion)
+    return patch_points
 
 # ------------ Main Code ------------ #
 # - Fill Type Parameters
@@ -1294,6 +1306,7 @@ scale_factor = hou.session.find_parm(hou.parent(), "low_scale_factor")
 
 # NOTE: points ordered, but ordering breaks after deletion.
 #       Min triangulation relies on ordering
+saved_groups = []
 for i in range(1, len(point_boundaries)):
   points = point_boundaries[i].points()
   points_vicinity = neighbor_point_boundaries[i].points()
@@ -1318,8 +1331,11 @@ for i in range(1, len(point_boundaries)):
     '''
     3. Fill large hole with advancing front method
     '''
+    saved_groups.append(point_boundaries[i].name())
+    patch_points = geo.createPointGroup("patch_" + point_boundaries[i].name())
     if large == 0:
-      Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
+      patch_points.add(Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill())
     else:
-      AFT_Fill(geo, points, edges, edges_neighbors).fill()
+      patch_points.add(AFT_Fill(geo, points, edges, edges_neighbors).fill())
+print(saved_groups)
 node.bypass(True)
