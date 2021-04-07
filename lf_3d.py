@@ -3,6 +3,7 @@ import itertools
 import math
 import numpy as np
 import operator
+import os
 import random
 import copy
 from collections import defaultdict
@@ -706,6 +707,8 @@ class Moving_Least_Squares_Fill():
       u_ind += 1
 
     path_name = hou.hipFile.name().split(".")[0]
+    if not os.path.exists(path_name):
+      os.mkdir(path_name)
     img.save(path_name + "/" + "see_new_sampling.png")
     '''
     E. Fit a surface through this height field using Moving Least Squares
