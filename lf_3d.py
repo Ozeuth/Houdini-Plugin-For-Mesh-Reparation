@@ -1282,8 +1282,7 @@ class AFT_Fill():
       points_loops.remove(points_neighbors)
       angle_loops.remove(points_angle)
 
-    self.geo.deletePoints(marked_for_deletion)
-    return patch_points
+    return patch_points, marked_for_deletion
 
 # ------------ Main Code ------------ #
 # - Fill Type Parameters
@@ -1309,13 +1308,14 @@ scale_factor = hou.session.find_parm(hou.parent(), "low_scale_factor")
 
 # NOTE: points ordered, but ordering breaks after deletion.
 #       Min triangulation relies on ordering
-saved_groups = []
+saved_groups, marked_for_deletion = [], []
 for i in range(1, len(point_boundaries)):
   points = point_boundaries[i].points()
   points_vicinity = neighbor_point_boundaries[i].points()
   edges = edge_boundaries[i].edges()
   edges_neighbors = neighbor_edge_boundaries[i].edges()
 
+  print("ITER" + str(i))
   if len(points) <= 8:
     '''
     1. Fill small holes with centroid-based method
@@ -1337,8 +1337,11 @@ for i in range(1, len(point_boundaries)):
     saved_groups.append(point_boundaries[i].name())
     patch_points = geo.createPointGroup("patch_" + point_boundaries[i].name())
     if large == 0:
-      patch_points.add(Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill())
+      patch_points_ = Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
     else:
-      patch_points.add(AFT_Fill(geo, points, edges, edges_neighbors).fill())
-print(saved_groups)
+      # BUG: Fails if points were deleted
+      patch_points_, marked_for_deletion_ = AFT_Fill(geo, points, edges, edges_neighbors).fill()
+      marked_for_deletion.extend(marked_for_deletion_)
+    patch_points.add(patch_points_)
+geo.deletePoints(marked_for_deletion)
 node.bypass(True)

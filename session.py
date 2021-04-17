@@ -25,6 +25,18 @@ def find_parm(node, name):
       break
   return found_eval
 
+def find_nodes(name, num_nodes=float('inf'), in_hda=True):
+  matcher = nodesearch.Name(name)
+  matching_nodes = []
+  found_nodes = 0
+  for node in matcher.nodes(hou.node("/obj/"), recursive=True):
+    if (in_hda and (HDA_name in node.path())) or not in_hda:
+      matching_nodes.append(node)
+      found_nodes += 1
+      if found_nodes == num_nodes:
+        break
+  return matching_nodes[0] if num_nodes == 1 else matching_nodes
+
 # ------------ Pipeline Functions ------------ #
 def reset_camera(camera):
   camera.parmTuple('t').set((0, 0, 0))
@@ -63,11 +75,7 @@ def render_then_map(image_paths, node_2d, is_full):
     low_repair()
 
 def preprocess():
-  matcher = nodesearch.Name(HDA_name)
-  for node in matcher.nodes(hou.node("/obj/"), recursive=True):
-    if hou.node(node.path() + "/repeat_end"):
-      node_prep = hou.node(node.path() + "/repeat_end")
-      break
+  node_prep = find_nodes("repeat_end", num_nodes=1)
   '''
   1. Clean Tooth Edges
   '''
@@ -76,11 +84,7 @@ def preprocess():
 def low_repair():
   preprocess()
   # Low Frequency Pass
-  matcher = nodesearch.Name(HDA_name)
-  for node in matcher.nodes(hou.node("/obj/"), recursive=True):
-    if hou.node(node.path() + "/lf_3d"):
-      node_prep_clean = hou.node(node.path() + "/lf_3d")
-      break
+  node_prep_clean = find_nodes("lf_3d", num_nodes=1)
   '''
   1. Topology Repair
   '''
@@ -89,14 +93,9 @@ def low_repair():
 def high_repair(is_full=False):
   preprocess()
   # High Frequency Pass
-  matcher = nodesearch.Name(HDA_name)
-  for node in matcher.nodes(hou.node("/obj/"), recursive=True):
-    if hou.node(node.path() + "/hf_prepare_3d"):
-      node_3d = hou.node(node.path() + "/hf_prepare_3d")
-    if hou.node(node.path() + "/hf_optimize_3d"):
-      node_op_3d = hou.node(node.path() + "/hf_optimize_3d")
-    if hou.node(node.path() + "/hf_prepare_2d"):
-      node_2d = hou.node(node.path() + "/hf_prepare_2d")
+  node_3d = find_nodes("hf_prepare_3d", num_nodes=1)
+  node_op_3d = find_nodes("hf_optimize_3d", num_nodes=1)
+  node_2d = find_nodes("hf_prepare_2d", num_nodes=1)
   '''
   1. Choose 3D Context Region
   '''
