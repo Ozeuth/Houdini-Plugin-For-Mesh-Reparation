@@ -4,6 +4,7 @@ import glob
 import nodesearch
 import os
 from PIL import ImageFont
+import subprocess
 import time
 from threading import Thread
 
@@ -24,6 +25,7 @@ def find_parm(node, name):
       found_eval = param.eval()
       break
   return found_eval
+
 
 def find_nodes(name, num_nodes=float('inf'), in_hda=True):
   matcher = nodesearch.Name(name)
@@ -77,20 +79,38 @@ def render_then_map(image_paths, node_2d, is_full):
 def preprocess():
   node_prep = find_nodes("repeat_end", num_nodes=1)
   '''
-  1. Clean Tooth Edges
+  0. Clean Tooth Edges
   '''
   node_prep.parm("stopcondition").set(0)
 
 def low_repair():
   preprocess()
   # Low Frequency Pass
-  node_prep_clean = find_nodes("lf_3d", num_nodes=1)
+  node_lf = find_nodes("lf_3d", num_nodes=1)
   '''
   1. Topology Repair
   '''
-  node_prep_clean.bypass(False)
+  node_lf.bypass(False)
 
-def high_repair(is_full=False):
+def high_repair():
+  # High Frequency Pass
+  node_hf_prep = find_nodes("hf_3d_prep", num_nodes=1)
+  '''
+  2. Export Patch Topology
+  '''
+  node_hf_prep.bypass(False)
+  '''
+  3. Detail Repair
+  '''
+  
+  print(subprocess.check_call(['wsl', 'ls','-l',]))
+  '''
+  4. Import Patch Topology + Detail
+  '''
+
+
+
+def high_repair_old(is_full=False):
   preprocess()
   # High Frequency Pass
   node_3d = find_nodes("hf_prepare_3d", num_nodes=1)

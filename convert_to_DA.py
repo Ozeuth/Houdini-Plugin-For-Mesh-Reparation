@@ -126,11 +126,14 @@ if subnet.canCreateDigitalAsset():
 
   # High Frequency Folder
   high_folder = hou.FolderParmTemplate("high_folder", "High Frequency", folder_type = hou.folderType.Tabs)
+  high_folder.addParmTemplate(hou.FolderParmTemplate("synth_path", "Synthesizer Path", 1))
+  high_folder.addParmTemplate(hou.ButtonParmTemplate("high_new", "High Frequency Reparation", script_callback = "hou.session.high_repair()", script_callback_language = hou.scriptLanguage.Python, help="Begin New High-Frequency Reparation"))
+  '''
+  # Old High Freq implementation
   high_folder.addParmTemplate(hou.ToggleParmTemplate("isAlpha", "Change Alpha", 0, help="Check if you wish to use a different alpha to determine optimal occupancy ratio"))
   alpha = hou.FloatParmTemplate("alpha", "Occupancy Ratio Alpha", 1, default_value=(0.87,), min=0.0, max=1.0, min_is_strict=True, max_is_strict=True, help="alpha used in S Salamanca,P Merchan,A Adan,E Perez,C Cerrada[2008]")
   alpha.setConditional(hou.parmCondType.DisableWhen, "{ isAlpha == 0 }")
-  high_folder.addParmTemplate(alpha)
-  high_folder.addParmTemplate(hou.ButtonParmTemplate("high_new", "High Frequency Reparation", script_callback = "hou.session.high_repair()", script_callback_language = hou.scriptLanguage.Python, help="Begin New High-Frequency Reparation"))
+  high_folder.addParmTemplate(alpha)'''
 
   parm_group.append(inputs_folder)
   parm_group.append(low_folder)

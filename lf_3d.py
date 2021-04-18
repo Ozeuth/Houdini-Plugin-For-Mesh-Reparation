@@ -1306,8 +1306,9 @@ point_threshold = hou.session.find_parm(hou.parent(), "low_distance_threshold")
 rank_factor = hou.session.find_parm(hou.parent(), "low_rank_factor")
 scale_factor = hou.session.find_parm(hou.parent(), "low_scale_factor")
 
-# NOTE: points ordered, but ordering breaks after deletion.
+# NOTE: points ordered, but deletion breaks ordering
 #       Min triangulation relies on ordering
+#       All deletions thus after ordering and saving
 saved_groups, marked_for_deletion = [], []
 for i in range(1, len(point_boundaries)):
   points = point_boundaries[i].points()
@@ -1315,7 +1316,6 @@ for i in range(1, len(point_boundaries)):
   edges = edge_boundaries[i].edges()
   edges_neighbors = neighbor_edge_boundaries[i].edges()
 
-  print("ITER" + str(i))
   if len(points) <= 8:
     '''
     1. Fill small holes with centroid-based method
@@ -1339,7 +1339,6 @@ for i in range(1, len(point_boundaries)):
     if large == 0:
       patch_points_ = Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
     else:
-      # BUG: Fails if points were deleted
       patch_points_, marked_for_deletion_ = AFT_Fill(geo, points, edges, edges_neighbors).fill()
       marked_for_deletion.extend(marked_for_deletion_)
     patch_points.add(patch_points_)
