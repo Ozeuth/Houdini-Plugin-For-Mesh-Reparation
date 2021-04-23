@@ -4,7 +4,7 @@ import glob
 import nodesearch
 import os
 from PIL import ImageFont
-import subprocess
+import subprocess as sp
 import time
 from threading import Thread
 
@@ -18,7 +18,7 @@ cameras_info = {
 }
 # ------------ Generic Utility Functions ------------ #
 def find_parm(node, name):
-  params = hou.parent().parms()
+  params = node.parms()
   found_eval = None
   for param in params:
     if (name in param.name()):
@@ -83,6 +83,15 @@ def preprocess():
   '''
   node_prep.parm("stopcondition").set(0)
 
+def help_receive():
+  global process
+  variable = ""
+  next_byte = process.stdout.read(1)
+  while str(next_byte) != "|":
+    variable = variable + next_byte
+    next_byte = process.stdout.read(1)
+  return variable
+
 def low_repair():
   preprocess()
   # Low Frequency Pass
@@ -93,6 +102,7 @@ def low_repair():
   node_lf.bypass(False)
 
 def high_repair():
+  global process
   # High Frequency Pass
   node_hf_prep = find_nodes("hf_3d_prep", num_nodes=1)
   '''
@@ -102,11 +112,30 @@ def high_repair():
   '''
   3. Detail Repair
   '''
-  
-  print(subprocess.check_call(['wsl', 'ls','-l',]))
+  synthesizer_path = find_parm(find_nodes(HDA_name, num_nodes=1, in_hda=False), "synth_path")
+  # NOTE: Houdini parm template ignores the first / in path
+  if not os.path.exists(synthesizer_path):
+    if os.path.exists("/" + synthesizer_path):
+      synthesizer_path = "/" + synthesizer_path
+    else:
+      raise Exception("ERROR: Path to geometric texture synthesizer invalid")
+
+  process = sp.Popen("wsl /home/ozeuth/anaconda3/envs/test/bin/python /home/ozeuth/geometric-textures/repair.py --train_mesh cloud --input_mesh patch_group__0",
+                              stdout=sp.PIPE, shell=True)
+  while True:
+    line = process.stdout.readline()
+    if not line: 
+      break
+    print(line, flush=True)
+  process.stdout.close()
+  return_code = process.wait()
+  if return_code:
+    raise sp.CalledProcessError(return_code, "geometric synthesizer failed")
+
+
   '''
   4. Import Patch Topology + Detail
-  '''
+  ''' 
 
 
 
