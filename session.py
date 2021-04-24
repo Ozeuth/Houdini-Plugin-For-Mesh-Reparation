@@ -120,7 +120,7 @@ def high_repair():
     else:
       raise Exception("ERROR: Path to geometric texture synthesizer invalid")
 
-  process = sp.Popen("wsl /home/ozeuth/anaconda3/envs/test/bin/python /home/ozeuth/geometric-textures/repair.py --train_mesh cloud --input_mesh patch_group__0",
+  process = sp.Popen("wsl /home/ozeuth/anaconda3/envs/test/bin/python /home/ozeuth/geometric-textures/repair.py cloud patch_group__0",
                               stdout=sp.PIPE, shell=True)
   while True:
     line = process.stdout.readline()

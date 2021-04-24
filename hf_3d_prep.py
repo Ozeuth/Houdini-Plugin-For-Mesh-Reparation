@@ -22,6 +22,7 @@ if not os.path.exists(synthesizer_path):
     raise Exception("ERROR: Path to geometric texture synthesizer invalid")
 
 old_blast_nodes = hou.session.find_nodes("oz_blast_")
+old_tri_nodes = hou.session.find_nodes("oz_tri_")
 old_file_nodes = hou.session.find_nodes("oz_file_")
 
 for i in range(0, len(point_boundaries)):
@@ -37,10 +38,16 @@ for i in range(0, len(point_boundaries)):
   blast_node.parm("grouptype").set(3)
   blast_node.setInput(0, node)
 
+  # triangulate_node
+  tri_node = old_tri_nodes[i] if len(old_tri_nodes) > i else node.parent().createNode("divide", "oz_tri_" + points.name())
+  tri_node.setPosition(blast_node.position() + hou.Vector2(0, -1))
+  tri_node.parm("usemaxsides").set(3)
+  tri_node.setInput(0, blast_node)
+
   # file_node
   file_node = old_file_nodes[i] if len(old_file_nodes) > i else node.parent().createNode("file", "oz_file_" + points.name())
-  file_node.setPosition(blast_node.position() + hou.Vector2(0, -1))
-  file_node.setInput(0, blast_node)
+  file_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
+  file_node.setInput(0, tri_node)
 
   dataset_path = synthesizer_path + "/dataset"
   if not os.path.isdir(dataset_path):
