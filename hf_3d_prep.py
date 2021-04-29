@@ -14,16 +14,11 @@ for point_group in geo.pointGroups():
     point_boundaries.append(point_group)
 
 synthesizer_path = hou.session.find_parm(hou.parent(), "synth_path")
-# NOTE: Houdini parm template ignores the first / in path
-if not os.path.exists(synthesizer_path):
-  if os.path.exists("/" + synthesizer_path):
-    synthesizer_path = "/" + synthesizer_path
-  else:
-    raise Exception("ERROR: Path to geometric texture synthesizer invalid")
 
 old_blast_nodes = hou.session.find_nodes("oz_blast_")
 old_tri_nodes = hou.session.find_nodes("oz_tri_")
-old_file_nodes = hou.session.find_nodes("oz_file_")
+old_file_input_nodes = hou.session.find_nodes("oz_input_")
+old_file_output_nodes = hou.session.find_nodes("oz_output_")
 
 for i in range(0, len(point_boundaries)):
   points = point_boundaries[i] 
@@ -44,10 +39,10 @@ for i in range(0, len(point_boundaries)):
   tri_node.parm("usemaxsides").set(3)
   tri_node.setInput(0, blast_node)
 
-  # file_node
-  file_node = old_file_nodes[i] if len(old_file_nodes) > i else node.parent().createNode("file", "oz_file_" + points.name())
-  file_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
-  file_node.setInput(0, tri_node)
+  # file_input_node
+  file_input_node = old_file_input_nodes[i] if len(old_file_input_nodes) > i else node.parent().createNode("file", "oz_input_" + points.name())
+  file_input_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
+  file_input_node.setInput(0, tri_node)
 
   dataset_path = synthesizer_path + "/dataset"
   if not os.path.isdir(dataset_path):
@@ -55,8 +50,15 @@ for i in range(0, len(point_boundaries)):
   raw_path = dataset_path + "/raw"
   if not os.path.isdir(raw_path):
     os.mkdir(raw_path)
-  file_node.parm("file").set(raw_path + "/" + point_patch.name() + ".obj")
-  file_node.parm("filemode").set(2)
+  file_input_node.parm("file").set(raw_path + "/" + point_patch.name() + ".obj")
+  file_input_node.parm("filemode").set(2)
+
+  # file_output_node 
+  file_output_node = old_file_output_nodes[i] if len(old_file_output_nodes) > i else node.parent().createNode("file", "oz_output_" + points.name())
+  file_output_node.setPosition(file_input_node.position() + hou.Vector2(0, -1))
+
+  file_output_node.parm("file").set(raw_path + "/" + point_patch.name() + "_hi.obj")
+  file_output_node.parm("filemode").set(1)
 
 # delete excess nodes from prior reparations
 for j in range(i+1, len(old_blast_nodes)):

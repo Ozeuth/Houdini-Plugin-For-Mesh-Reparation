@@ -126,7 +126,7 @@ if subnet.canCreateDigitalAsset():
 
   # High Frequency Folder
   high_folder = hou.FolderParmTemplate("high_folder", "High Frequency", folder_type = hou.folderType.Tabs)
-  high_folder.addParmTemplate(hou.StringParmTemplate("synth_path", "Synthesizer Path", 1, file_type = hou.fileType.Directory, help="Path to Geometric Texture Synthsizer"))
+  high_folder.addParmTemplate(hou.StringParmTemplate("synth_path", "Synthesizer Path", 1, string_type = hou.stringParmType.FileReference, file_type = hou.fileType.Directory, help="Path to Geometric Texture Synthsizer"))
   high_folder.addParmTemplate(hou.ButtonParmTemplate("high_new", "High Frequency Reparation", script_callback = "hou.session.high_repair()", script_callback_language = hou.scriptLanguage.Python, help="Begin New High-Frequency Reparation"))
   '''
   # Old High Freq implementation

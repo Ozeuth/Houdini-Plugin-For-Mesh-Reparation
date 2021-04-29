@@ -132,10 +132,12 @@ def high_repair():
   if return_code:
     raise sp.CalledProcessError(return_code, "geometric synthesizer failed")
 
-
   '''
   4. Import Patch Topology + Detail
-  ''' 
+  '''
+  file_output_nodes = find_nodes("oz_output_")
+  for file_output_node in file_output_nodes:
+    file_output_node.parm("reload").pressButton()
 
 
 
