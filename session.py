@@ -83,15 +83,6 @@ def preprocess():
   '''
   node_prep.parm("stopcondition").set(0)
 
-def help_receive():
-  global process
-  variable = ""
-  next_byte = process.stdout.read(1)
-  while str(next_byte) != "|":
-    variable = variable + next_byte
-    next_byte = process.stdout.read(1)
-  return variable
-
 def low_repair():
   preprocess()
   # Low Frequency Pass
@@ -132,12 +123,24 @@ def high_repair():
   if return_code:
     raise sp.CalledProcessError(return_code, "geometric synthesizer failed")
 
-  '''
-  4. Import Patch Topology + Detail
-  '''
+  input_transform_nodes = find_nodes("oz_transform_input_")
   file_output_nodes = find_nodes("oz_output_")
-  for file_output_node in file_output_nodes:
+  output_transform_nodes = find_nodes("oz_transform_output_")
+  for i in range(len(input_transform_nodes)):
+    input_transform_node = input_transform_nodes[i]
+    file_output_node = file_output_nodes[i]
+    output_transform_nodes = output_transform_nodes[i]
+    '''
+    4. Import Detail Repaired Patch
+    ''' 
     file_output_node.parm("reload").pressButton()
+    '''
+    5. Align Detail Repaired Patch
+    '''
+    input_transform_node.parm("movecentroid").pressButton()
+    output_transform_nodes.parm("movecentroid").pressButton()
+
+
 
 
 
