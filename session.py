@@ -123,13 +123,18 @@ def high_repair():
   if return_code:
     raise sp.CalledProcessError(return_code, "geometric synthesizer failed")
 
+  merge_node_ = find_nodes("oz_combined", num_nodes=1)
+  merge_node_.cook()
   input_transform_nodes = find_nodes("oz_transform_input_")
   file_output_nodes = find_nodes("oz_output_")
   output_transform_nodes = find_nodes("oz_transform_output_")
+  merge_nodes = find_nodes("oz_merge_")
+
   for i in range(len(input_transform_nodes)):
     input_transform_node = input_transform_nodes[i]
     file_output_node = file_output_nodes[i]
     output_transform_nodes = output_transform_nodes[i]
+    merge_node = merge_nodes[i]
     '''
     4. Import Detail Repaired Patch
     ''' 
@@ -139,10 +144,9 @@ def high_repair():
     '''
     input_transform_node.parm("movecentroid").pressButton()
     output_transform_nodes.parm("movecentroid").pressButton()
-
-
-
-
+    merge_node_.setInput(i+2, merge_node)
+    
+    
 
 def high_repair_old(is_full=False):
   preprocess()
