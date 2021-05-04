@@ -20,7 +20,9 @@ cameras_info = {
 def find_parm(node, name):
   params = node.parms()
   found_eval = None
+  print(len(params))
   for param in params:
+    print(param.name())
     if (name in param.name()):
       found_eval = param.eval()
       break
@@ -129,12 +131,14 @@ def high_repair():
   file_output_nodes = find_nodes("oz_output_")
   output_transform_nodes = find_nodes("oz_transform_output_")
   merge_nodes = find_nodes("oz_merge_")
+  group_nodes = find_nodes("oz_group_")
 
   for i in range(len(input_transform_nodes)):
     input_transform_node = input_transform_nodes[i]
     file_output_node = file_output_nodes[i]
-    output_transform_nodes = output_transform_nodes[i]
+    output_transform_node = output_transform_nodes[i]
     merge_node = merge_nodes[i]
+    group_node = group_nodes[i]
     '''
     4. Import Detail Repaired Patch
     ''' 
@@ -143,9 +147,9 @@ def high_repair():
     5. Align Detail Repaired Patch
     '''
     input_transform_node.parm("movecentroid").pressButton()
-    output_transform_nodes.parm("movecentroid").pressButton()
-    merge_node_.setInput(i+2, merge_node)
-    
+    output_transform_node.parm("movecentroid").pressButton()
+    merge_node.cook(True)
+    merge_node_.setInput(i+2, group_node)
     
 
 def high_repair_old(is_full=False):

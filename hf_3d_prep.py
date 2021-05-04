@@ -21,9 +21,15 @@ old_file_input_nodes = hou.session.find_nodes("oz_input_")
 old_transform_input_nodes = hou.session.find_nodes("oz_transform_input_")
 old_file_output_nodes = hou.session.find_nodes("oz_output_")
 old_transform_output_nodes = hou.session.find_nodes("oz_transform_output_")
+old_group_nodes = hou.session.find_nodes("oz_group_")
 old_merge_nodes = hou.session.find_nodes("oz_merge_")
 
 for i in range(0, len(point_boundaries)):
+  '''
+  1. low-freq reparation patches are extracted from low-freq reparation.
+     Each low-freq reparation patch is exported to hi-freq reparation.
+     Each hi-freq reparation patch is imported from hi-freq reparation.
+  '''
   points = point_boundaries[i] 
   point_patch = point_patches[i]
 
@@ -71,9 +77,16 @@ for i in range(0, len(point_boundaries)):
   transform_output_node.setPosition(file_output_node.position() + hou.Vector2(0, -1))
   transform_output_node.setInput(0, file_output_node)
 
+  # group node
+  group_node = old_group_nodes[i] if len(old_group_nodes) > i else node.parent().createNode("groupcreate", "oz_group_" + points.name())
+  group_node.setPosition(transform_output_node.position() + hou.Vector2(0, -1))
+  group_node.parm("groupname").set("patch_" + points.name())
+  group_node.parm("grouptype").set(1)
+  group_node.setInput(0, transform_output_node)
+
   # merge_node
   merge_node = old_merge_nodes[i] if len(old_merge_nodes) > i else node.parent().createNode("merge", "oz_merge_" + points.name())
-  merge_node.setPosition((transform_input_node.position() + transform_output_node.position()) / 2 + hou.Vector2(0, -1))
+  merge_node.setPosition(transform_input_node.position() + hou.Vector2(0, -1))
   merge_node.setInput(0, transform_input_node)
   merge_node.setInput(1, transform_output_node)
 
@@ -85,6 +98,7 @@ for j in range(i+1, len(old_blast_nodes)):
   old_transform_input_nodes[j].destroy(True)
   old_file_output_nodes[j].destroy(True)
   old_transform_output_nodes[j].destroy(True)
+  old_group_nodes[j].destroy(True)
   old_merge_nodes[j].destroy(True)
 
 node.bypass(True)
