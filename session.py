@@ -18,11 +18,11 @@ cameras_info = {
 }
 # ------------ Generic Utility Functions ------------ #
 def find_parm(node, name):
+  if node.parm(name) != None:
+    return node.parm(name).eval()
   params = node.parms()
-  found_eval = None
-  print(len(params))
+  found_eval = None 
   for param in params:
-    print(param.name())
     if (name in param.name()):
       found_eval = param.eval()
       break

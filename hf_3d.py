@@ -71,12 +71,7 @@ for i, merge_node in enumerate(merge_nodes):
       better_scale_findable = False
 
   print("Scaled hi-freq patch by " + str(best_scale) + " to lo-freq patch size, with error " + str(best_dist))
-  #print(lo_node.parms())
-  #print(lo_node.parm("ty").eval())
-  print(hou.session.find_parm(lo_node, "tx"))
-  print(hou.session.find_parm(lo_node, "tz"))
-  print(hou.session.find_parm(lo_node, "ty"))
-  #lo_node_translate = hou.Vector3((hou.session.find_parm(lo_node, "tx"), hou.session.find_parm(lo_node, "ty"), hou.session.find_parm(lo_node, "tz")))
+  lo_node_translate = hou.Vector3((hou.session.find_parm(lo_node, "tx"), hou.session.find_parm(lo_node, "ty"), hou.session.find_parm(lo_node, "tz")))
   for point in points_patch:
     point.setPosition(point.position() * best_scale - lo_node_translate)
 
