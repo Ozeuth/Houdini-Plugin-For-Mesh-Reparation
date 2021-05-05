@@ -17,6 +17,7 @@ synthesizer_path = hou.session.find_parm(hou.parent(), "synth_path")
 
 old_blast_nodes = hou.session.find_nodes("oz_blast_")
 old_tri_nodes = hou.session.find_nodes("oz_tri_")
+old_clean_nodes = hou.session.find_nodes("oz_clean_")
 old_file_input_nodes = hou.session.find_nodes("oz_input_")
 old_transform_input_nodes = hou.session.find_nodes("oz_transform_input_")
 old_file_output_nodes = hou.session.find_nodes("oz_output_")
@@ -38,6 +39,7 @@ for i in range(0, len(point_boundaries)):
   blast_node = old_blast_nodes[i] if len(old_blast_nodes) > i else node.parent().createNode("blast", "oz_blast_" + points.name())
   blast_node.setPosition(node.position() + hou.Vector2(i * 2, -1))
   blast_node.parm("negate").set(1)
+  blast_node.parm("fillhole").set(1)
   blast_node.parm("group").set(point_patch.name() + " " + points.name())
   blast_node.parm("grouptype").set(3)
   blast_node.setInput(0, node)
@@ -48,10 +50,19 @@ for i in range(0, len(point_boundaries)):
   tri_node.parm("usemaxsides").set(3)
   tri_node.setInput(0, blast_node)
 
+  # clean_node
+  clean_node = old_clean_nodes[i] if len(old_clean_nodes) > i else node.parent().createNode("clean", "oz_clean_" + points.name())
+  clean_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
+  clean_node.parm("fusepts").set(1)
+  clean_node.parm("deldegengeo").set(0)
+  clean_node.parm("fixoverlap").set(1)
+  clean_node.parm("delunusedpts").set(1)
+  clean_node.setInput(0, tri_node)
+
   # file_input_node
   file_input_node = old_file_input_nodes[i] if len(old_file_input_nodes) > i else node.parent().createNode("file", "oz_input_" + points.name())
-  file_input_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
-  file_input_node.setInput(0, tri_node)
+  file_input_node.setPosition(clean_node.position() + hou.Vector2(0, -1))
+  file_input_node.setInput(0, clean_node)
   dataset_path = synthesizer_path + "/dataset"
   if not os.path.isdir(dataset_path):
     os.mkdir(dataset_path)
@@ -94,6 +105,7 @@ for i in range(0, len(point_boundaries)):
 for j in range(i+1, len(old_blast_nodes)):
   old_blast_nodes[j].destroy(True)
   old_tri_nodes[j].destroy(True)
+  old_clean_nodes[j].destroy(True)
   old_file_input_nodes[j].destroy(True)
   old_transform_input_nodes[j].destroy(True)
   old_file_output_nodes[j].destroy(True)
