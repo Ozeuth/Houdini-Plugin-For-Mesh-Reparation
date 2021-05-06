@@ -667,7 +667,7 @@ class Moving_Least_Squares_Fill():
       for prim in point.prims():
         if prim.type() == hou.primType.Polygon:
           polys[prim.number()] = prim.intrinsicValue("measuredarea")
-    grid_stepsize = math.sqrt(sum(polys.values()) / (3 * len(points)) )
+    grid_stepsize = math.sqrt(sum(polys.values()) / (3 * len(points)) ) * (1/ density_factor)
     beta = 0.75
     # We need to convert from UV coord system (where (0, 0) is domain center)
     # To image representable form (where (0, 0) is domain start), and have visible results
@@ -1304,6 +1304,7 @@ point_threshold = hou.session.find_parm(hou.parent(), "low_distance_threshold")
 
 # - MLS with MWT Parameters
 rank_factor = hou.session.find_parm(hou.parent(), "low_rank_factor")
+density_factor = hou.session.find_parm(hou.parent(), "low_density_factor")
 scale_factor = hou.session.find_parm(hou.parent(), "low_scale_factor")
 
 # NOTE: points ordered, but deletion breaks ordering

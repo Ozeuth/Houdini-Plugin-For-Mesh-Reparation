@@ -111,6 +111,13 @@ if subnet.canCreateDigitalAsset():
     help="Change as instructed until hole is correctly detected as coplanar/ not coplanar")
   low_rank_factor.setConditional(hou.parmCondType.HideWhen, "{ low_large_type == 1 }")
   low_large_folder.addParmTemplate(low_rank_factor)
+
+  low_density_factor = hou.FloatParmTemplate("low_density_factor", "Density Factor",
+    1, default_value=(1,), min=0.0, max=1.0,
+    min_is_strict=True, max_is_strict=False,
+    help="Decrease if using high frequency repair, especially if repairer crashes")
+  low_density_factor.setConditional(hou.parmCondType.HideWhen, "{ low_large_type == 1 }")
+  low_large_folder.addParmTemplate(low_density_factor)
   
   low_scale_factor = hou.FloatParmTemplate("low_scale_factor", "Projection Scale Factor",
     1, default_value=(1.0,), min=0.0, max=2.0,
