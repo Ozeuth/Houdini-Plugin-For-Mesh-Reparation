@@ -5,6 +5,7 @@ from hausdorff import hausdorff_distance
 node = hou.pwd()
 geo = node.geometry()
 
+lo_pre_clean_nodes = hou.session.find_nodes("oz_tri_")
 merge_nodes = hou.session.find_nodes("oz_merge_")
 
 point_boundaries = []
@@ -20,7 +21,8 @@ for i, merge_node in enumerate(merge_nodes):
   points = point_boundaries[i].points()
   points_patch = point_patchs[i].points()
 
-  lo_node = merge_node.inputs()[0]
+  lo_node = lo_pre_clean_nodes[i]
+  #lo_node = merge_node.inputs()[0]
   hi_node = merge_node.inputs()[1]
   
   lo_points = lo_node.geometry().points()

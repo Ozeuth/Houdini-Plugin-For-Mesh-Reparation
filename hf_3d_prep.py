@@ -17,6 +17,8 @@ synthesizer_path = hou.session.find_parm(hou.parent(), "synth_path")
 
 old_blast_nodes = hou.session.find_nodes("oz_blast_")
 old_tri_nodes = hou.session.find_nodes("oz_tri_")
+old_boundary_nodes = hou.session.find_nodes("oz_boundary_")
+old_delete_nodes = hou.session.find_nodes("oz_delete_")
 old_clean_nodes = hou.session.find_nodes("oz_clean_")
 old_file_input_nodes = hou.session.find_nodes("oz_input_")
 old_transform_input_nodes = hou.session.find_nodes("oz_transform_input_")
@@ -50,14 +52,32 @@ for i in range(0, len(point_boundaries)):
   tri_node.parm("usemaxsides").set(3)
   tri_node.setInput(0, blast_node)
 
+  # boundary_node
+  boundary_node = old_boundary_nodes[i] if len(old_boundary_nodes) > i else node.parent().createNode("groupcreate", "oz_boundary_" + points.name())
+  boundary_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
+  boundary_node.parm("groupname").set("artifacts")
+  boundary_node.parm("grouptype").set(1)
+  boundary_node.parm("groupbase").set(0)
+  boundary_node.parm("groupedges").set(1)
+  boundary_node.parm("unshared").set(1)
+  boundary_node.parm("boundarygroups").set(1)
+  boundary_node.setInput(0, tri_node)
+
+  # delete_node
+  delete_node = old_delete_nodes[i] if len(old_delete_nodes) > i else node.parent().createNode("delete", "oz_delete_" + points.name())
+  delete_node.setPosition(boundary_node.position() + hou.Vector2(0, -1))
+  delete_node.parm("group").set("artifacts")
+  delete_node.parm("entity").set(1)
+  delete_node.parm("affectnumber").set(0)
+  delete_node.setInput(0, boundary_node)
+
   # clean_node
   clean_node = old_clean_nodes[i] if len(old_clean_nodes) > i else node.parent().createNode("clean", "oz_clean_" + points.name())
-  clean_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
+  clean_node.setPosition(delete_node.position() + hou.Vector2(0, -1))
   clean_node.parm("fusepts").set(1)
-  clean_node.parm("deldegengeo").set(0)
   clean_node.parm("fixoverlap").set(1)
   clean_node.parm("delunusedpts").set(1)
-  clean_node.setInput(0, tri_node)
+  clean_node.setInput(0, delete_node)
 
   # file_input_node
   file_input_node = old_file_input_nodes[i] if len(old_file_input_nodes) > i else node.parent().createNode("file", "oz_input_" + points.name())
@@ -105,6 +125,8 @@ for i in range(0, len(point_boundaries)):
 for j in range(i+1, len(old_blast_nodes)):
   old_blast_nodes[j].destroy(True)
   old_tri_nodes[j].destroy(True)
+  old_boundary_nodes[j].destroy(True)
+  old_delete_nodes[j].destroy(True)
   old_clean_nodes[j].destroy(True)
   old_file_input_nodes[j].destroy(True)
   old_transform_input_nodes[j].destroy(True)
