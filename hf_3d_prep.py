@@ -52,16 +52,21 @@ for i in range(0, len(point_boundaries)):
   tri_node.parm("usemaxsides").set(3)
   tri_node.setInput(0, blast_node)
 
+  # transform_input_node
+  transform_input_node = old_transform_input_nodes[i] if len(old_transform_input_nodes) > i else node.parent().createNode("xform", "oz_transform_input_" + points.name())
+  transform_input_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
+  transform_input_node.setInput(0, tri_node)
+
   # boundary_node
   boundary_node = old_boundary_nodes[i] if len(old_boundary_nodes) > i else node.parent().createNode("groupcreate", "oz_boundary_" + points.name())
-  boundary_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
+  boundary_node.setPosition(transform_input_node.position() + hou.Vector2(0, -1))
   boundary_node.parm("groupname").set("artifacts")
   boundary_node.parm("grouptype").set(1)
   boundary_node.parm("groupbase").set(0)
   boundary_node.parm("groupedges").set(1)
   boundary_node.parm("unshared").set(1)
   boundary_node.parm("boundarygroups").set(1)
-  boundary_node.setInput(0, tri_node)
+  boundary_node.setInput(0, transform_input_node)
 
   # delete_node
   delete_node = old_delete_nodes[i] if len(old_delete_nodes) > i else node.parent().createNode("delete", "oz_delete_" + points.name())
@@ -92,11 +97,6 @@ for i in range(0, len(point_boundaries)):
   file_input_node.parm("file").set(raw_path + "/" + point_patch.name() + ".obj")
   file_input_node.parm("filemode").set(2)
 
-  # transform_input_node
-  transform_input_node = old_transform_input_nodes[i] if len(old_transform_input_nodes) > i else node.parent().createNode("xform", "oz_transform_input_" + points.name())
-  transform_input_node.setPosition(file_input_node.position() + hou.Vector2(0, -1))
-  transform_input_node.setInput(0, file_input_node)
-
   # file_output_node 
   file_output_node = old_file_output_nodes[i] if len(old_file_output_nodes) > i else node.parent().createNode("file", "oz_output_" + points.name())
   file_output_node.setPosition(file_input_node.position() + hou.Vector2(1, -0.5))
@@ -117,8 +117,8 @@ for i in range(0, len(point_boundaries)):
 
   # merge_node
   merge_node = old_merge_nodes[i] if len(old_merge_nodes) > i else node.parent().createNode("merge", "oz_merge_" + points.name())
-  merge_node.setPosition(transform_input_node.position() + hou.Vector2(0, -1))
-  merge_node.setInput(0, transform_input_node)
+  merge_node.setPosition(file_input_node.position() + hou.Vector2(0, -2))
+  merge_node.setInput(0, file_input_node)
   merge_node.setInput(1, transform_output_node)
 
 # delete excess nodes from prior reparations
