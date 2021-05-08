@@ -85,8 +85,8 @@ for i, merge_node in enumerate(merge_nodes):
 
   best_scale_1, best_dist_1 = best_fit_scale(lo_unclean_points_pos, hi_points_pos)
   best_scale_2, best_dist_2 = best_fit_scale(lo_points_pos, hi_points_pos)
-  best_scale = (best_dist_1 * best_scale_1) / (best_dist_1 + best_dist_2) + (best_dist_2 * best_scale_2) / (best_dist_1 + best_dist_2)
-  best_dist = (best_dist_1 * best_dist_1) / (best_dist_1 + best_dist_2) + (best_dist_2 * best_dist_2) / (best_dist_1 + best_dist_2)
+  best_scale = (best_dist_2 * best_scale_1) / (best_dist_1 + best_dist_2) + (best_dist_1 * best_scale_2) / (best_dist_1 + best_dist_2)
+  best_dist = (best_dist_2 * best_dist_1) / (best_dist_1 + best_dist_2) + (best_dist_1 * best_dist_2) / (best_dist_1 + best_dist_2)
 
   print("Scaled hi-freq patch by " + str(best_scale) + " to lo-freq patch size, with error " + str(best_dist))
   lo_node_translate = hou.Vector3((hou.session.find_parm(lo_unclean_node, "tx"), hou.session.find_parm(lo_unclean_node, "ty"), hou.session.find_parm(lo_unclean_node, "tz")))
