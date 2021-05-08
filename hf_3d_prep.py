@@ -17,7 +17,7 @@ synthesizer_path = hou.session.find_parm(hou.parent(), "synth_path")
 
 old_blast_nodes = hou.session.find_nodes("oz_blast_")
 old_tri_nodes = hou.session.find_nodes("oz_tri_")
-old_boundary_nodes = hou.session.find_nodes("oz_boundary_")
+old_boundary_input_nodes = hou.session.find_nodes("oz_boundary_input_")
 old_delete_nodes = hou.session.find_nodes("oz_delete_")
 old_clean_nodes = hou.session.find_nodes("oz_clean_")
 old_file_input_nodes = hou.session.find_nodes("oz_input_")
@@ -25,6 +25,7 @@ old_transform_input_nodes = hou.session.find_nodes("oz_transform_input_")
 old_file_output_nodes = hou.session.find_nodes("oz_output_")
 old_transform_output_nodes = hou.session.find_nodes("oz_transform_output_")
 old_group_nodes = hou.session.find_nodes("oz_group_")
+old_boundary_output_nodes = hou.session.find_nodes("oz_boundary_output_")
 old_merge_nodes = hou.session.find_nodes("oz_merge_")
 
 for i in range(0, len(point_boundaries)):
@@ -57,24 +58,24 @@ for i in range(0, len(point_boundaries)):
   transform_input_node.setPosition(tri_node.position() + hou.Vector2(0, -1))
   transform_input_node.setInput(0, tri_node)
 
-  # boundary_node
-  boundary_node = old_boundary_nodes[i] if len(old_boundary_nodes) > i else node.parent().createNode("groupcreate", "oz_boundary_" + points.name())
-  boundary_node.setPosition(transform_input_node.position() + hou.Vector2(0, -1))
-  boundary_node.parm("groupname").set("artifacts")
-  boundary_node.parm("grouptype").set(1)
-  boundary_node.parm("groupbase").set(0)
-  boundary_node.parm("groupedges").set(1)
-  boundary_node.parm("unshared").set(1)
-  boundary_node.parm("boundarygroups").set(1)
-  boundary_node.setInput(0, transform_input_node)
+  # boundary_input_node
+  boundary_input_node = old_boundary_input_nodes[i] if len(old_boundary_input_nodes) > i else node.parent().createNode("groupcreate", "oz_boundary_input_" + points.name())
+  boundary_input_node.setPosition(transform_input_node.position() + hou.Vector2(0, -1))
+  boundary_input_node.parm("groupname").set("artifacts")
+  boundary_input_node.parm("grouptype").set(1)
+  boundary_input_node.parm("groupbase").set(0)
+  boundary_input_node.parm("groupedges").set(1)
+  boundary_input_node.parm("unshared").set(1)
+  boundary_input_node.parm("boundarygroups").set(1)
+  boundary_input_node.setInput(0, transform_input_node)
 
   # delete_node
   delete_node = old_delete_nodes[i] if len(old_delete_nodes) > i else node.parent().createNode("delete", "oz_delete_" + points.name())
-  delete_node.setPosition(boundary_node.position() + hou.Vector2(0, -1))
+  delete_node.setPosition(boundary_input_node.position() + hou.Vector2(0, -1))
   delete_node.parm("group").set("artifacts")
   delete_node.parm("entity").set(1)
   delete_node.parm("affectnumber").set(0)
-  delete_node.setInput(0, boundary_node)
+  delete_node.setInput(0, boundary_input_node)
 
   # clean_node
   clean_node = old_clean_nodes[i] if len(old_clean_nodes) > i else node.parent().createNode("clean", "oz_clean_" + points.name())
@@ -115,6 +116,16 @@ for i in range(0, len(point_boundaries)):
   group_node.parm("grouptype").set(1)
   group_node.setInput(0, transform_output_node)
 
+  # boundary_input_node
+  boundary_output_node = old_boundary_output_nodes[i] if len(old_boundary_output_nodes) > i else node.parent().createNode("groupcreate", "oz_boundary_output_" + points.name())
+  boundary_output_node.setPosition(group_node.position() + hou.Vector2(0, -1))
+  boundary_output_node.parm("groupname").set("boundary_" + points.name())
+  boundary_output_node.parm("grouptype").set(1)
+  boundary_output_node.parm("groupbase").set(0)
+  boundary_output_node.parm("groupedges").set(1)
+  boundary_output_node.parm("unshared").set(1)
+  boundary_output_node.setInput(0, group_node)
+
   # merge_node
   merge_node = old_merge_nodes[i] if len(old_merge_nodes) > i else node.parent().createNode("merge", "oz_merge_" + points.name())
   merge_node.setPosition(file_input_node.position() + hou.Vector2(0, -2))
@@ -125,7 +136,7 @@ for i in range(0, len(point_boundaries)):
 for j in range(i+1, len(old_blast_nodes)):
   old_blast_nodes[j].destroy(True)
   old_tri_nodes[j].destroy(True)
-  old_boundary_nodes[j].destroy(True)
+  old_boundary_input_nodes[j].destroy(True)
   old_delete_nodes[j].destroy(True)
   old_clean_nodes[j].destroy(True)
   old_file_input_nodes[j].destroy(True)
@@ -133,6 +144,7 @@ for j in range(i+1, len(old_blast_nodes)):
   old_file_output_nodes[j].destroy(True)
   old_transform_output_nodes[j].destroy(True)
   old_group_nodes[j].destroy(True)
+  old_boundary_output_nodes[j].destroy(True)
   old_merge_nodes[j].destroy(True)
 
 node.bypass(True)

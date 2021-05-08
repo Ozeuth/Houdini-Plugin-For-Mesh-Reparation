@@ -9,10 +9,13 @@ lo_unclean_nodes = hou.session.find_nodes("oz_transform_input_")
 merge_nodes = hou.session.find_nodes("oz_merge_")
 
 point_boundaries = []
+patch_point_boundaries = []
 point_patchs = []
 for point_group in geo.pointGroups():
   if "patch" in point_group.name():
     point_patchs.append(point_group)
+  elif "boundary" in point_group.name():
+    patch_point_boundaries.append(point_group)
   else:
     point_boundaries.append(point_group)
 
@@ -51,6 +54,7 @@ def best_fit_scale(lo_points_pos, hi_points_pos):
 
 for i, merge_node in enumerate(merge_nodes):
   points = point_boundaries[i].points()
+  patch_points = patch_point_boundaries[i].points()
   points_patch = point_patchs[i].points()
 
   lo_unclean_node = lo_unclean_nodes[i]
@@ -92,4 +96,14 @@ for i, merge_node in enumerate(merge_nodes):
   lo_node_translate = hou.Vector3((hou.session.find_parm(lo_unclean_node, "tx"), hou.session.find_parm(lo_unclean_node, "ty"), hou.session.find_parm(lo_unclean_node, "tz")))
   for point in points_patch:
     point.setPosition(point.position() * best_scale - lo_node_translate)
+  
+  '''
+  We now have the original mesh and a hi-frequency patch mesh. This forms an island hole
+
+  2. Similar to the lo-frequency case, We Follow F Bi, Y Hu, X Chen, Y Ma [2013],
+    Island hole automatic filling algorithm in triangular meshes
+    A. Find the two points on the inner boundary furthest from one another
+  '''
+
+
 
