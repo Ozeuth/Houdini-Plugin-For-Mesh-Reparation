@@ -25,7 +25,8 @@ old_transform_input_nodes = hou.session.find_nodes("oz_transform_input_")
 old_file_output_nodes = hou.session.find_nodes("oz_output_")
 old_transform_output_nodes = hou.session.find_nodes("oz_transform_output_")
 old_group_nodes = hou.session.find_nodes("oz_group_")
-old_boundary_output_nodes = hou.session.find_nodes("oz_boundary_output_")
+old_boundary_point_output_nodes = hou.session.find_nodes("oz_boundary_point_output_")
+old_boundary_edge_output_nodes = hou.session.find_nodes("oz_boundary_edge_output_")
 old_merge_nodes = hou.session.find_nodes("oz_merge_")
 
 for i in range(0, len(point_boundaries)):
@@ -116,15 +117,25 @@ for i in range(0, len(point_boundaries)):
   group_node.parm("grouptype").set(1)
   group_node.setInput(0, transform_output_node)
 
-  # boundary_input_node
-  boundary_output_node = old_boundary_output_nodes[i] if len(old_boundary_output_nodes) > i else node.parent().createNode("groupcreate", "oz_boundary_output_" + points.name())
-  boundary_output_node.setPosition(group_node.position() + hou.Vector2(0, -1))
-  boundary_output_node.parm("groupname").set("boundary_" + points.name())
-  boundary_output_node.parm("grouptype").set(1)
-  boundary_output_node.parm("groupbase").set(0)
-  boundary_output_node.parm("groupedges").set(1)
-  boundary_output_node.parm("unshared").set(1)
-  boundary_output_node.setInput(0, group_node)
+  # boundary_point_output_node
+  boundary_point_output_node = old_boundary_point_output_nodes[i] if len(old_boundary_point_output_nodes) > i else node.parent().createNode("groupcreate", "oz_boundary_point_output_" + points.name())
+  boundary_point_output_node.setPosition(group_node.position() + hou.Vector2(0, -1))
+  boundary_point_output_node.parm("groupname").set("boundary_" + points.name())
+  boundary_point_output_node.parm("grouptype").set(1)
+  boundary_point_output_node.parm("groupbase").set(0)
+  boundary_point_output_node.parm("groupedges").set(1)
+  boundary_point_output_node.parm("unshared").set(1)
+  boundary_point_output_node.setInput(0, group_node)
+
+  # boundary_edge_output_node
+  boundary_edge_output_node = old_boundary_edge_output_nodes[i] if len(old_boundary_edge_output_nodes) > i else node.parent().createNode("grouppromote", "oz_boundary_edge_output_" + points.name())
+  boundary_edge_output_node.setPosition(boundary_point_output_node.position() + hou.Vector2(0, -1))
+  boundary_edge_output_node.parm("fromtype1").set(2)
+  boundary_edge_output_node.parm("totype1").set(2)
+  boundary_edge_output_node.parm("group1").set("boundary_" + points.name())
+  boundary_edge_output_node.parm("preserve1").set(1)
+  boundary_edge_output_node.parm("onlyfull1").set(1)
+  boundary_edge_output_node.setInput(0, boundary_point_output_node)
 
   # merge_node
   merge_node = old_merge_nodes[i] if len(old_merge_nodes) > i else node.parent().createNode("merge", "oz_merge_" + points.name())
@@ -144,7 +155,8 @@ for j in range(i+1, len(old_blast_nodes)):
   old_file_output_nodes[j].destroy(True)
   old_transform_output_nodes[j].destroy(True)
   old_group_nodes[j].destroy(True)
-  old_boundary_output_nodes[j].destroy(True)
+  old_boundary_point_output_nodes[j].destroy(True)
+  old_boundary_edge_output_nodes[j].destroy(True)
   old_merge_nodes[j].destroy(True)
 
 node.bypass(True)

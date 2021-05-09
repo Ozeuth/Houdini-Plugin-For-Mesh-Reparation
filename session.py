@@ -28,8 +28,22 @@ def find_parm(node, name):
       break
   return found_eval
 
-
 def find_nodes(name, num_nodes=float('inf'), in_hda=True):
+  '''
+  1. Look for nodes matching exact name
+  2. If insufficient nodes match exact name,
+     Look for nodes containing name
+  '''
+  matcher = nodesearch.Name(name, exact=True)
+  matching_nodes_exact = []
+  found_nodes_exact = 0
+  for node in matcher.nodes(hou.node("/obj/"), recursive=True):
+    if (in_hda and (HDA_name in node.path())) or not in_hda:
+      matching_nodes_exact.append(node)
+      found_nodes_exact += 1
+  if found_nodes_exact == num_nodes:
+    return matching_nodes_exact[0] if num_nodes == 1 else matching_nodes_exact
+
   matcher = nodesearch.Name(name)
   matching_nodes = []
   found_nodes = 0
@@ -37,8 +51,7 @@ def find_nodes(name, num_nodes=float('inf'), in_hda=True):
     if (in_hda and (HDA_name in node.path())) or not in_hda:
       matching_nodes.append(node)
       found_nodes += 1
-      if found_nodes == num_nodes:
-        break
+  assert(found_nodes == num_nodes or num_nodes == float('inf'))
   return matching_nodes[0] if num_nodes == 1 else matching_nodes
 
 # ------------ Pipeline Functions ------------ #
@@ -125,13 +138,14 @@ def high_repair():
   if return_code:
     raise sp.CalledProcessError(return_code, "geometric synthesizer failed")
 
+  node_hf = find_nodes("hf_3d", num_nodes=1)
   merge_node_ = find_nodes("oz_combined", num_nodes=1)
   merge_node_.cook()
   input_transform_nodes = find_nodes("oz_transform_input_")
   file_output_nodes = find_nodes("oz_output_")
   output_transform_nodes = find_nodes("oz_transform_output_")
   merge_nodes = find_nodes("oz_merge_")
-  boundary_nodes = find_nodes("oz_boundary_output_")
+  boundary_nodes = find_nodes("oz_boundary_edge_output_")
 
   for i in range(len(input_transform_nodes)):
     input_transform_node = input_transform_nodes[i]
@@ -140,16 +154,21 @@ def high_repair():
     merge_node = merge_nodes[i]
     boundary_node = boundary_nodes[i]
     '''
-    4. Import Detail Repaired Patch
+    4. Import Patch Detail
     ''' 
     file_output_node.parm("reload").pressButton()
     '''
-    5. Align Detail Repaired Patch
+    5. Preparation for Patch Detail Alignment
     '''
     input_transform_node.parm("movecentroid").pressButton()
     output_transform_node.parm("movecentroid").pressButton()
     merge_node.cook(True)
     merge_node_.setInput(i+2, boundary_node)
+  '''
+  6. Complete Patch Detail Alignment
+  7. Stitch Patch Detail back to Mesh
+  '''
+  node_hf.bypass(False)
     
 
 def high_repair_old(is_full=False):
