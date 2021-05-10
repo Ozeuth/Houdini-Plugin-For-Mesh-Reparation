@@ -3,6 +3,7 @@ import math
 import numpy as np
 from hausdorff import hausdorff_distance
 from collections import defaultdict
+from queue import PriorityQueue
 
 node = hou.pwd()
 geo = node.geometry()
@@ -187,8 +188,63 @@ class MinTriangulation():
           new_poly.addVertex(p)
     return min_polys
 
+class GapContraction():
+  def __init__(self, geo, points, edges):
+    self.geo = geo
+    self.points = points
+    self.edges = edges
+  
+  def fill(self):
+    '''
+    We Follow P Borodin, M Novotni, R Klein [2002],
+    Progressive Gap Closing for Mesh Repairing
+    A. For each point on the boundary, we find the closest viable_edge or viable_point
+       where:
+         viable_edge = not adjacent to point, and orthogonal projection exists between point and edge
+         viable_point = not equal to point
+    '''
+    min_dist_to_elems = PriorityQueue()
+    elems_to_points = defaultdict(list)
+    for i, point in enumerate(self.points):
+      min_dist, min_elem = float('inf'), None
+      for j, edge in enumerate(self.edges):
+        '''
+                p1
+                | proj
+         p_inter|------pi
+                |
+                p2
+        '''
+        p1, p2 = edge.points()
+        if p1 != point and p2 != point:
+          e_1i = point.position() - p1.position()
+          e_12 = p2.position() - p1.position()
+          e_1inter = (e_1i.dot(e_12) / e_12.dot(e_12)) * e_12
+          mu = (e_1inter.x() / e_12.x() + e_1inter.y() / e_12.y() + e_1inter.z() / e_12.z()) / 3
+          if 0 < mu and mu < 1: # Viable Edge
+            proj = e_1i - e_1inter
+            proj_dist = proj.length()
+            if proj_dist < min_dist:
+              min_dist, min_elem = proj_dist, edge
+          else: # Viable Point
+            p_1i_dist, p_2i_dist = point.distanceTo(p1), point.distanceTo(p2)
+            if p_1i_dist < min_dist:
+              min_dist, min_elem = p_1i_dist, p1
+            if p_2i_dist < min_dist:
+              min_dist, min_elem = p_2i_dist, p2
+      min_dist_to_elems.put((min_dist, min_elem))   
+      elems_to_points[min_elem].append(point)
+    '''
+    B. Starting with the shortest distance between a (viable_element, point) pair,
+       If the viable_element is a viable_edge, do point_to_edge_contraction
+       otherwise, do point_to_point_contraction
+       where:
+         point_to_edge_contraction = 
+         NOTE: If the orthogonal projection of point onto viable_edge is too close the viable_edge's points,
+               do point_to_point_contraction between point and the nearby point instead.
+          
+    '''
 # ------------ Hole-Filling Classes ------------ ~
-
 class Island_Fill():
   def __init__(self, geo, points, inner_points):
     self.geo = geo
@@ -284,7 +340,6 @@ class Island_Fill():
     boundaries = [(p_1_to_p_2_outer, p_1_to_p_2_inner_rev), (p_2_to_p_1_outer, p_2_to_p_1_inner_rev)] # outer, inner
     num_split = 0
     while boundaries:
-      print(len(boundaries))
       outer, inner = boundaries.pop()
       if len(outer) + len(inner) > max_boundary_size:
         inner_ind = int(math.floor(len(inner) / 2))
@@ -307,7 +362,6 @@ class Island_Fill():
       else:
         num_split += 1
         MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
-
 
 # ------------ Main Code ------------ #
 for i, merge_node in enumerate(merge_nodes):
