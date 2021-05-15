@@ -51,7 +51,7 @@ def get_clockwise_neighbors(p, p_a_b):
   assert(p_1 != None and p_2 != None)
   return p_1, p_2
 
-def min_dist_and_elem(point, virtual_edges, epsilon=0.1):
+def min_dist_and_elem(point, virtual_edges, points_neighbors_, epsilon=0.1):
   min_dist, min_elem, min_inter = float('inf'), None, None
   for virtual_edge in virtual_edges:
     '''
@@ -62,7 +62,12 @@ def min_dist_and_elem(point, virtual_edges, epsilon=0.1):
           p2
     '''
     p1, p2 = virtual_edge
-    if p1 != point and p2 != point:
+    points_neighbors = None
+    for points_neighbor_ in points_neighbors_:
+      if point in points_neighbor_ and p1 in points_neighbor_ and p2 in points_neighbor_:
+        points_neighbors = points_neighbor_
+
+    if p1 != point and p2 != point and points_neighbors != None:
       e_1i = point.position() - p1.position()
       e_12 = p2.position() - p1.position()
       e_1inter = (e_1i.dot(e_12) / e_12.dot(e_12)) * e_12
@@ -70,14 +75,7 @@ def min_dist_and_elem(point, virtual_edges, epsilon=0.1):
       for i in range(3):
         mu += e_1inter[i] / e_12[i] if e_12[i] != 0 else 0
       mu /= 3
-      # NOTE: CHANGE MU
-      mu = -1
-      '''if point.number() == 170 and 422 in set((p1.number(), p2.number())) and 166 in set((p1.number(), p2.number())):
-        print((point.number(), p1.number(), p2.number()))
-        for prim in point.prims():
-          if prim.type() == hou.primType.Polygon:
-            print(prim.points())
-            print(p1 in prim.points() and p2 in prim.points())'''
+
       is_self_merge = False
       for prim in point.prims():
         if prim.type() == hou.primType.Polygon:
@@ -111,7 +109,7 @@ for edge in edges:
 points_neighbors_ = [points_neighbors]
 
 for point in points:
-  min_dist, min_elem, min_inter = min_dist_and_elem(point, virtual_edges)
+  min_dist, min_elem, min_inter = min_dist_and_elem(point, virtual_edges, points_neighbors_)
   if min_elem != None:
     elems_to_points[min_elem].append(point)
     dist_to_pairs.put((min_dist, Pair(point, min_elem, min_inter)))
@@ -131,8 +129,13 @@ while not dist_to_pairs.empty() and break_point < 13:
       for points_neighbor_ in points_neighbors_:
         if point in points_neighbor_ and elem[0] in points_neighbor_ and elem[1] in points_neighbor_:
           points_neighbors = points_neighbor_
+      '''
+      
+      '''
       point.setPosition((inter + point.position()) / 2)
       p1, p2 = elem
+      elem_l, elem_r = p1 if points_neighbors[p1][1] == p2 else p2, p1 if points_neighbors[p1][0] == p2 else p2
+
       elem_poly = set(p1.prims()).intersection(set(p2.prims())).pop()
       marked_for_delete_polys.append(elem_poly)
       poly_1, poly_2 = set(elem_poly.points() + [point]) - set([p2]), set(elem_poly.points() + [point]) - set([p1])
@@ -147,32 +150,52 @@ while not dist_to_pairs.empty() and break_point < 13:
       old_point_edges = []
       for p in points_neighbors[point]:
         old_point_edges.append(sort_points((point, p)))
-      
-      points_neighbors[point] += [p for p in [p1, p2] if p not in points_neighbors[point]]
-      if point not in points_neighbors[p1]: points_neighbors[p1].append(point)
-      points_neighbors[p1].remove(p2)
-      if point not in points_neighbors[p2]: points_neighbors[p2].append(point)
-      points_neighbors[p2].remove(p1)
-      points_to_elem[point] = None
 
       duplicate_edges = set(old_point_edges).intersection(set(old_elem_edges))
       virtual_edges = ((set(virtual_edges)).union(set([sort_points((p1, point)), sort_points((p2, point))])) 
                       - duplicate_edges - set([elem]))
+      affected_elems = [point, elem] + old_point_edges
 
+      points_neighbors_l, points_neighbors_r = defaultdict(list), defaultdict(list)
+      point_l, point_r = points_neighbors[point]
+      points_to_elem[point] = None
+
+      points_neighbors[point] = [point_l, elem_r]
+      points_neighbors[elem_r][0] = point
+      curr, is_loop = point, False
+      while not is_loop:
+        points_neighbors_l[curr] = points_neighbors[curr]
+        curr = points_neighbors[curr][0]
+        if curr == point:
+          is_loop = True
+      
+      points_neighbors[point] = [elem_l, point_r]
+      points_neighbors[elem_l][1] = point
+      curr, is_loop = point, False
+      while not is_loop:
+        points_neighbors_r[curr] = points_neighbors[curr]
+        curr = points_neighbors[curr][0]
+        if curr == point:
+          is_loop = True
+
+      marked_for_delete_groups = []
+      new_points_neighbors = [points_neighbors_l, points_neighbors_r]
       while len(duplicate_edges) > 0:
         pa, pb = duplicate_edges.pop()
         point_other = pa if pb == point else pb
-        points_neighbors[point_other].remove(point)
-        if not points_neighbors[point_other]:
-          points_to_elem[point_other] = None
-          del points_neighbors[point_other]
+        points_to_elem[point_other] = None
+        if point_other in points_neighbors_l: marked_for_delete_groups.append(points_neighbors_l)
+        if point_other in points_neighbors_r: marked_for_delete_groups.append(points_neighbors_r)
         affected_elems += [point_other]
-        points_neighbors[point].remove(point_other)
-        if not points_neighbors[point]:
-          points_to_elem[point] = None
-          del points_neighbors[point]
 
-      affected_elems = [point, elem] + old_point_edges
+      for marked_for_delete_group in marked_for_delete_groups:
+        new_points_neighbors.remove(marked_for_delete_group)
+        del marked_for_delete_group
+      if not new_points_neighbors:
+        points_to_elem[point] = None
+      points_neighbors_.remove(points_neighbors)
+      points_neighbors_ += new_points_neighbors
+
     if type(elem) == hou.Point:
       # Point to Point Contraction
       print("P-P: " + str((point.number(), elem.number())))
@@ -180,12 +203,25 @@ while not dist_to_pairs.empty() and break_point < 13:
         if point in points_neighbor_ and elem in points_neighbor_:
           points_neighbors = points_neighbor_
       is_ee_contraction = sort_points((point, elem)) in virtual_edges
-      ''' Typical Point-Point Contraction
+      ''' 
+          Typical Point-Point Contraction
           p1____elem____p2     p1 _____    _____p2
                             =>        elem               Non-Edge Contraction
           p3____point____p4     p3____/    \____p4
       OR
           p1___point___elem___p2  =>   p1____elem____p2  Edge Contraction
+
+          Edge case Point-Point Contraction
+                / elem        
+               /         =>   other------point           Non-Edge Contraction
+              /            
+          other____point
+      OR
+                 elem
+                /   |
+               /    |    =>   other------point           Edge Contraction
+              /     |
+          other____point
       '''
       elem.setPosition((elem.position() + point.position()) / 2)
       for prim in point.prims():
@@ -276,7 +312,7 @@ while not dist_to_pairs.empty() and break_point < 13:
     for affected_elems_point in affected_elems_points:
       points_to_elem[affected_elems_point] = None
       if affected_elems_point not in marked_for_delete_points and affected_elems_points != point_other:
-        min_dist, min_elem, min_inter = min_dist_and_elem(affected_elems_point, virtual_edges)
+        min_dist, min_elem, min_inter = min_dist_and_elem(affected_elems_point, virtual_edges, points_neighbors_)
         if min_elem != None:
           elems_to_points[min_elem].append(affected_elems_point)
           points_to_elem[affected_elems_point] = min_elem
