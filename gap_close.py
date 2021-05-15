@@ -130,29 +130,41 @@ while not dist_to_pairs.empty() and break_point < 13:
         if point in points_neighbor_ and elem[0] in points_neighbor_ and elem[1] in points_neighbor_:
           points_neighbors = points_neighbor_
       '''
-      
+          Typical Point-Edge Contraction
+                elem
+          er____________el       er____     _____el
+                             =>        \   /
+                                     point
+          pl___point____pr       pl____/   \_____pr
+
+          Edge case Point-Edge Contraction
+              
+              el                              el
+             /                               /
+            / elem           =>  other----point
+           /                                  \ 
+          other___point___pr                   pr
+
       '''
       point.setPosition((inter + point.position()) / 2)
-      p1, p2 = elem
-      elem_l, elem_r = p1 if points_neighbors[p1][1] == p2 else p2, p1 if points_neighbors[p1][0] == p2 else p2
+      elem_l, elem_r = elem[0] if points_neighbors[elem[0]][1] == elem[1] else elem[1], elem[0] if points_neighbors[elem[0]][0] == elem[1] else elem[1]
 
-      elem_poly = set(p1.prims()).intersection(set(p2.prims())).pop()
+      elem_poly = set(elem_l.prims()).intersection(set(elem_r.prims())).pop()
       marked_for_delete_polys.append(elem_poly)
-      poly_1, poly_2 = set(elem_poly.points() + [point]) - set([p2]), set(elem_poly.points() + [point]) - set([p1])
+      poly_1, poly_2 = set(elem_poly.points() + [point]) - set([elem_r]), set(elem_poly.points() + [point]) - set([elem_l])
       geo.createPolygons((tuple(poly_1), tuple(poly_2)))
 
       old_elem_edges = []
-      for p in points_neighbors[p1]:
-        if p != p2: old_elem_edges.append(sort_points((p1, p)))
-      for p in points_neighbors[p2]:
-        if p != p1: old_elem_edges.append(sort_points((p2, p)))
-
+      for p in points_neighbors[elem_l]:
+        if p != elem_r: old_elem_edges.append(sort_points((elem_l, p)))
+      for p in points_neighbors[elem_r]:
+        if p != elem_l: old_elem_edges.append(sort_points((elem_r, p)))
       old_point_edges = []
       for p in points_neighbors[point]:
         old_point_edges.append(sort_points((point, p)))
 
       duplicate_edges = set(old_point_edges).intersection(set(old_elem_edges))
-      virtual_edges = ((set(virtual_edges)).union(set([sort_points((p1, point)), sort_points((p2, point))])) 
+      virtual_edges = ((set(virtual_edges)).union(set([sort_points((elem_l, point)), sort_points((elem_r, point))])) 
                       - duplicate_edges - set([elem]))
       affected_elems = [point, elem] + old_point_edges
 
