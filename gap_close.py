@@ -75,7 +75,6 @@ def min_dist_and_elem(point, neighbors_edges_pairs, epsilon=0.1):
       for i in range(3):
         mu += e_1inter[i] / e_12[i] if e_12[i] != 0 else 0
       mu /= 3
-
       is_self_merge = False
       for prim in point.prims():
         if prim.type() == hou.primType.Polygon:
@@ -154,7 +153,10 @@ while not dist_to_pairs.empty() and break_point < 50:
 
       elem_poly = set(elem_l.prims()).intersection(set(elem_r.prims())).pop()
       marked_for_delete_polys.append(elem_poly)
-      poly_1, poly_2 = set(elem_poly.points() + [point]) - set([elem_r]), set(elem_poly.points() + [point]) - set([elem_l])
+      poly_points = elem_poly.points()
+      poly_1, poly_2 = poly_points.copy(), poly_points.copy()
+      elem_r_index, elem_l_index = poly_1.index(elem_r), poly_2.index(elem_l)
+      poly_1[elem_r_index], poly_2[elem_l_index] = point, point
       geo.createPolygons((tuple(poly_1), tuple(poly_2)))
 
       old_elem_edges = ([sort_points((elem_l, p)) for p in points_neighbors[elem_l] if p != elem_r] 
@@ -242,9 +244,13 @@ while not dist_to_pairs.empty() and break_point < 50:
       for prim in point.prims():
         if prim.type() == hou.primType.Polygon:
           if elem not in prim.points():
-            prim.addVertex(elem)
-          else:
-            marked_for_delete_polys.append(prim)
+            poly_points = prim.points()
+            point_index = poly_points.index(point)
+            poly_points[point_index] = elem
+            new_poly = geo.createPolygon()
+            for poly_point in poly_points:
+              new_poly.addVertex(poly_point)
+          marked_for_delete_polys.append(prim)
       marked_for_delete_points.append(point)
 
       old_elem_edges = [sort_points((elem, p)) for p in points_neighbors[elem]]
