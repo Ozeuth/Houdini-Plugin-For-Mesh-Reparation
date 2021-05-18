@@ -1,4 +1,5 @@
 import hou
+import numpy as np
 from collections import defaultdict
 from queue import PriorityQueue
 
@@ -7,10 +8,6 @@ geo = node.geometry()
 
 points = geo.pointGroups()[0].points()
 edges = geo.edgeGroups()[0].edges()
-
-dist_to_pairs = PriorityQueue()
-shared_groups, shared_groups_to_edges = [], defaultdict(list)
-points_to_elem, elems_to_points = {}, defaultdict(list)
 
 class Pair():
   def __init__(self, point, elem, inter):
@@ -94,8 +91,13 @@ def min_dist_and_elem(point, neighbors_edges_pairs, epsilon=0.1):
           min_dist, min_elem = p_2i_dist, p2
   return (min_dist, min_elem, min_inter)
 
-points_neighbors = defaultdict(list)
-virtual_edges = []
+dist_to_pairs = PriorityQueue()
+shared_groups, shared_groups_to_edges = [], defaultdict(list)
+points_to_elem, elems_to_points = {}, defaultdict(list)
+points_neighbors, virtual_edges = defaultdict(list), []
+
+neighbors_pull, neighbors_pull_count = defaultdict(list), defaultdict(int)
+
 for edge in edges:
   p1, p2 = edge.points()
   points_neighbors[p1].append(p2)
@@ -118,7 +120,7 @@ for point in points:
 print("START")
 break_point  = 0
 marked_for_delete_points, marked_for_delete_polys = [], []
-while not dist_to_pairs.empty() and break_point < 50:
+while not dist_to_pairs.empty():
   dist, pair = dist_to_pairs.get()
   point, elem, inter = pair.point, pair.elem, pair.inter
   if point not in marked_for_delete_points and points_to_elem[point] == elem:
@@ -148,7 +150,18 @@ while not dist_to_pairs.empty() and break_point < 50:
           other___point___pr                   pr
 
       '''
-      point.setPosition((inter + point.position()) / 2)
+      point_new_position = (inter + point.position()) / 2
+      point_movement = point_new_position - point.position()
+      elem_movement = point_new_position - inter
+      point.setPosition(point_new_position)
+      weight = 1
+      for prim in point.prims():
+        if prim.type() == hou.primType.Polygon and prim not in marked_for_delete_polys:
+          for prim_point in prim.points():
+            if prim_point not in points:
+              neighbors_pull[prim_point] = (weight * point_movement) if prim_point not in neighbors_pull else (neighbors_pull[prim_point] + weight * point_movement)
+              neighbors_pull_count[prim_point] += 1
+    
       elem_l, elem_r = elem[0] if points_neighbors[elem[0]][1] == elem[1] else elem[1], elem[0] if points_neighbors[elem[0]][0] == elem[1] else elem[1]
 
       elem_poly = set(elem_l.prims()).intersection(set(elem_r.prims())).pop()
@@ -163,9 +176,6 @@ while not dist_to_pairs.empty() and break_point < 50:
                       + [sort_points((elem_r, p)) for p in points_neighbors[elem_r] if p != elem_l])
       old_point_edges = [sort_points((point, p)) for p in points_neighbors[point]]
       duplicate_edges = set(old_point_edges).intersection(set(old_elem_edges))
-
-      '''virtual_edges = ((set(virtual_edges)).union(set([sort_points((elem_l, point)), sort_points((elem_r, point))])) 
-                      - duplicate_edges - set([elem]))'''
       affected_elems = [point, elem] + old_point_edges
 
       points_neighbors_l, points_neighbors_r = defaultdict(list), defaultdict(list)
@@ -240,7 +250,23 @@ while not dist_to_pairs.empty() and break_point < 50:
               /     |
           other____point
       '''
-      elem.setPosition((elem.position() + point.position()) / 2)
+      point_new_position = (elem.position() + point.position()) / 2
+      point_movement = point_new_position - point.position()
+      elem_movement = point_new_position - elem.position()
+      elem.setPosition(point_new_position)
+      weight = 1
+      for prim in point.prims():
+        if prim.type() == hou.primType.Polygon and prim not in marked_for_delete_polys:
+          for prim_point in prim.points():
+            if prim_point not in points:
+              neighbors_pull[prim_point] = (weight * point_movement) if prim_point not in neighbors_pull else (neighbors_pull[prim_point] + weight * point_movement)
+              neighbors_pull_count[prim_point] += 1
+      for prim in elem.prims():
+        if prim.type() == hou.primType.Polygon and prim not in marked_for_delete_polys:
+          for prim_point in prim.points():
+            if prim_point not in points:
+              neighbors_pull[prim_point] = (weight * elem_movement) if prim_point not in neighbors_pull else (neighbors_pull[prim_point] + weight * elem_movement)
+              neighbors_pull_count[prim_point] += 1
       for prim in point.prims():
         if prim.type() == hou.primType.Polygon:
           if elem not in prim.points():
@@ -341,6 +367,24 @@ while not dist_to_pairs.empty() and break_point < 50:
           points_to_elem[affected_elems_point] = min_elem
           dist_to_pairs.put((min_dist, Pair(affected_elems_point, min_elem, min_inter)))
 
+    '''weight = 0.9
+    for prim in point.prims():
+      if prim.type() == hou.primType.Polygon and prim not in marked_for_delete_polys:
+        for prim_point in prim.points():
+          if prim_point not in points:
+            neighbors_pull[prim_point] = (weight * point_movement) if prim_point not in neighbors_pull else (neighbors_pull[prim_point] + weight * point_movement)
+            neighbors_pull_count[prim_point] += 1'''
+
+    '''if type(elem) == hou.Point:
+      for prim in elem.prims():
+        if prim.type() == hou.primType.Polygon and prim not in marked_for_delete_polys:
+          for prim_point in prim.points():
+            if prim_point not in points:
+              neighbors_pull[prim_point] = (weight * elem_movement) if prim_point not in neighbors_pull else (neighbors_pull[prim_point] + weight * elem_movement)
+              neighbors_pull_count[prim_point] += 1'''
+    '''else:
+      neighbors_pull[elem_l] = (weight * elem_movement) if elem_l not in neighbors_pull else (neighbors_pull[elem_l] + weight * elem_movement)
+      neighbors_pull[elem_r] = (weight * elem_movement) if elem_r not in neighbors_pull else (neighbors_pull[elem_r] + weight * elem_movement)'''
     '''for points_neighbor_, virtual_edges_ in neighbors_edges_pairs:
       temp_list = []
       print("PN, VE")
@@ -367,6 +411,9 @@ while not dist_to_pairs.empty() and break_point < 50:
         elem = (value[0].number(), value[1].number())
       temp_list.append([key.number(), elem])
     print(temp_list)'''
+
+for prim_point, point_movement in neighbors_pull.items():
+  prim_point.setPosition((prim_point.position() + point_movement/neighbors_pull_count[prim_point]))
 
 geo.deletePrims(marked_for_delete_polys, keep_points=True)
 geo.deletePoints(marked_for_delete_points)
