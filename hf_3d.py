@@ -41,7 +41,6 @@ def get_clockwise_neighbors(p, p_a_b):
       ps = []
       for v in prim.vertices():
         ps.append(v.point())
-        
       if p_a in ps or p_b in ps:
         p_i = ps.index(p)
         ps =  ps[p_i:] + ps[:p_i]
@@ -276,8 +275,7 @@ class GapContraction():
         p1 = self.points[i-1 if i > 0 else len(self.points)-1]
         p2 = self.points[i+1 if i < len(self.points)-1 else 0]
         points_neighbors[point] = list(get_clockwise_neighbors(point, (p1, p2)))
-        #points_neighbors[point] = [p1, p2]
-        virtual_edges.append(self.sort_points((p1, point)))
+        virtual_edges.append(self.sort_points((point, points_neighbors[point][0])))
     else:
       for edge in self.edges:
         p1, p2 = edge.points()
@@ -342,20 +340,20 @@ class GapContraction():
                   neighbors_pull_count[prim_point] += 1
         
           elem_l, elem_r = elem[0] if points_neighbors[elem[0]][1] == elem[1] else elem[1], elem[0] if points_neighbors[elem[0]][0] == elem[1] else elem[1]
-         
-          elem_poly = set(elem_l.prims()).intersection(set(elem_r.prims())).pop()
+          elem_polys = set(elem_l.prims()).intersection(set(elem_r.prims()))
+          elem_poly = None
+          while len(elem_polys) > 0:
+            curr_poly = elem_polys.pop()
+            if curr_poly not in marked_for_delete_polys:
+              elem_poly = curr_poly
+          assert(elem_poly != None)
           marked_for_delete_polys.append(elem_poly)
           poly_points = elem_poly.points()
+          
           poly_1, poly_2 = poly_points.copy(), poly_points.copy()
           elem_r_index, elem_l_index = poly_1.index(elem_r), poly_2.index(elem_l)
           poly_1[elem_r_index], poly_2[elem_l_index] = point, point
           geo.createPolygons((tuple(poly_1), tuple(poly_2)))
-          '''except:
-            # Unique case where elem is the virtual edge spanning the inner and outer boundary
-            # In which scenario, there is no shared polygon
-            new_poly = geo.createPolygon()
-            for p in (elem_l, point, elem_r):
-              new_poly.addVertex(p)'''
 
           old_elem_edges = ([self.sort_points((elem_l, p)) for p in points_neighbors[elem_l] if p != elem_r] 
                           + [self.sort_points((elem_r, p)) for p in points_neighbors[elem_r] if p != elem_l])
@@ -425,13 +423,13 @@ class GapContraction():
 
               Edge case Point-Point Contraction
                     / elem        
-                  /         =>   other------point           Non-Edge Contraction
+                   /         =>   other------point           Non-Edge Contraction
                   /            
               other____point
           OR
                     elem
                     /   |
-                  /    |    =>   other------point           Edge Contraction
+                   /    |    =>   other------point           Edge Contraction
                   /     |
               other____point
           '''
@@ -451,8 +449,9 @@ class GapContraction():
                 if prim_point not in points:
                   neighbors_pull[prim_point] = (neighbors_pull_weight * elem_movement) if prim_point not in neighbors_pull else (neighbors_pull[prim_point] + neighbors_pull_weight * elem_movement)
                   neighbors_pull_count[prim_point] += 1
+          
           for prim in point.prims():
-            if prim.type() == hou.primType.Polygon:
+            if prim.type() == hou.primType.Polygon and prim not in marked_for_delete_polys:
               if elem not in prim.points():
                 poly_points = prim.points()
                 point_index = poly_points.index(point)
@@ -477,6 +476,28 @@ class GapContraction():
             # Edge Contraction
             virtual_edges = ((set(virtual_edges) - set(old_point_edges)).union(set(new_point_edges))
                     - duplicate_edges - set([self.sort_points((point, elem))]))
+            
+            affected_pairs_ = []
+            for points_neighbor_, virtual_edges_ in neighbors_edges_pairs:
+              if point in points_neighbor_:
+                affected_pairs_.append((points_neighbor_, virtual_edges_))
+            for affected_points_neighbor, affected_virtual_edges in affected_pairs_:
+              neighbors_edges_pairs.remove((affected_points_neighbor, affected_virtual_edges))
+              old_virtual_edges, new_virtual_edges = [], []
+              for neighbor in affected_points_neighbor[point]:
+                old_virtual_edges.append(self.sort_points((point, neighbor)))
+                new_virtual_edges.append(self.sort_points((elem, neighbor)))
+                point_index = affected_points_neighbor[neighbor].index(point)
+                affected_points_neighbor[neighbor][point_index] = elem 
+
+              affected_virtual_edges = set(affected_virtual_edges).union(set(new_virtual_edges)) - set(old_virtual_edges)
+              affected_elems += old_virtual_edges
+              affected_points_neighbor[elem] = affected_points_neighbor[point]
+
+              del affected_points_neighbor[point] 
+              neighbors_edges_pairs.append((affected_points_neighbor, affected_virtual_edges))
+
+                
             del points_neighbors[point]
             points_neighbors[point_l][1] = elem if point_l != elem else point_r
             points_neighbors[point_r][0] = elem if point_r != elem else point_l
@@ -576,17 +597,17 @@ class GapContraction():
             elem = (value[0].number(), value[1].number())
           temp_list.append([key.number(), elem])
         print(temp_list)'''
-
     for prim_point, point_movement in neighbors_pull.items():
       prim_point.setPosition((prim_point.position() + point_movement / (neighbors_pull_count[prim_point])))
     return marked_for_delete_polys, marked_for_delete_points
 
 # ------------ Hole-Filling Classes ------------ ~
 class Island_Fill():
-  def __init__(self, geo, points, inner_points, is_bounded=True):
+  def __init__(self, geo, points, inner_points, is_min_tri=False, is_bounded=True):
     self.geo = geo
     self.points = points
     self.inner_points = inner_points
+    self.is_min_tri = is_min_tri
     self.is_bounded = is_bounded
 
   def fill(self):
@@ -663,6 +684,7 @@ class Island_Fill():
       p_2_inner_ind = total_ps_inner - p_1_inner_ind + p_2_inner_ind
     p_1_inner_ind = 0
 
+    marked_for_delete_polys, marked_for_delete_points = [], []
     if not self.is_bounded:
       p_1_to_p_2_outer = np.append(np.array(points_outer[:p_2_outer_ind]), [p_2_outer])
       p_2_to_p_1_outer = np.append(np.array(points_outer[p_2_outer_ind:]), [p_1_outer])
@@ -683,34 +705,20 @@ class Island_Fill():
       p_2_poly_outer = [p_1_to_p_2_prev_outer[len(p_1_to_p_2_prev_outer) - 1], p_2_outer, p_2_inner]
       p_2_poly_inner = [p_2_inner, p_1_to_p_2_prev_inner[len(p_1_to_p_2_prev_inner) - 1], p_1_to_p_2_prev_outer[len(p_1_to_p_2_prev_outer) - 1]]
       
-      #p1_poly = [p_2_to_p_1_prev_outer[len(p_2_to_p_1_prev_outer) - 1], p_1_outer, p_1_inner, p_2_to_p_1_prev_inner[len(p_2_to_p_1_prev_inner) - 1]]
-      #p2_poly = [p_1_to_p_2_prev_outer[len(p_1_to_p_2_prev_outer) - 1], p_2_outer, p_2_inner, p_1_to_p_2_prev_inner[len(p_1_to_p_2_prev_inner) - 1]]
-      geo.createPolygons((p_1_poly_outer, p_1_poly_inner, p_2_poly_outer, p_2_poly_inner))
+      self.geo.createPolygons((p_1_poly_outer, p_1_poly_inner, p_2_poly_outer, p_2_poly_inner))
 
       p_1_to_p_2_prev_inner_rev = p_1_to_p_2_prev_inner[::-1]
       p_2_to_p_1_prev_inner_rev = p_2_to_p_1_prev_inner[::-1]
       boundaries = [(p_1_to_p_2_prev_outer, p_1_to_p_2_prev_inner_rev), (p_2_to_p_1_prev_outer, p_2_to_p_1_prev_inner_rev)] # outer, inner
 
-      marked_for_delete_polys, marked_for_delete_points = [], []
-      marked_for_delete_polys_, marked_for_delete_points_ = GapContraction(self.geo, np.append(boundaries[0][0], boundaries[0][1])).fill()
-      marked_for_delete_polys += [p for p in marked_for_delete_polys_ if p not in marked_for_delete_polys]
-      marked_for_delete_points += [p for p in marked_for_delete_points_ if p not in marked_for_delete_points] 
-
-      marked_for_delete_polys_, marked_for_delete_points_ = GapContraction(self.geo, np.append(boundaries[1][0], boundaries[1][1])).fill()
-      marked_for_delete_polys += [p for p in marked_for_delete_polys_ if p not in marked_for_delete_polys]
-      marked_for_delete_points += [p for p in marked_for_delete_points_ if p not in marked_for_delete_points] 
-
-      self.geo.deletePrims(marked_for_delete_polys, keep_points=True)
-      self.geo.deletePoints(marked_for_delete_points)
     '''
     D. We can split the two regular holes to more holes, depending on the size of the hole
         Fill the holes using any method
     '''
     max_boundary_size = 200
     num_split = 0
-    #GapContraction(self.geo, np.append(boundaries[0][0], boundaries[0][1])).fill()
-    #GapContraction(self.geo, np.append(boundaries[1][0], boundaries[1][1])).fill()
-    '''while boundaries:
+
+    while boundaries:
       outer, inner = boundaries.pop()
       if len(outer) + len(inner) > max_boundary_size:
         inner_ind = int(math.floor(len(inner) / 2))
@@ -724,17 +732,34 @@ class Island_Fill():
             outer_ind, outer_point = i, point
             outer_pos = outer_point.position()
             min_dist = (inner_pos - pos).length()
-        inner_1 = np.append(inner[:inner_ind], [inner_point])
-        inner_2 = inner[inner_ind:]
-        outer_1 = outer[outer_ind:]
-        outer_2 = np.append(outer[:outer_ind], [outer_point])
-        boundaries.append((outer_1, inner_1))
-        boundaries.append((outer_2, inner_2))
+        if not self.is_bounded:
+          inner_1 = np.append(inner[:inner_ind], [inner_point])
+          inner_2 = inner[inner_ind:]
+          outer_1 = outer[outer_ind:]
+          outer_2 = np.append(outer[:outer_ind], [outer_point])
+          boundaries.append((outer_1, inner_1))
+          boundaries.append((outer_2, inner_2))
+        else:
+          inner_1 = inner[:inner_ind]
+          inner_2 = inner[inner_ind:]
+          outer_1 = outer[outer_ind:]
+          outer_2 = outer[:outer_ind]
+          poly_1 = [inner_point, outer_point, inner_1[len(inner_1) - 1]]
+          poly_2 = [outer_point, inner_point, outer_2[len(outer_2) - 1]]
+          self.geo.createPolygons((poly_1, poly_2))
+          boundaries.append((outer_1, inner_1))
+          boundaries.append((outer_2, inner_2))
       else:
         num_split += 1
-        GapContraction(self.geo, np.append(outer, inner)).fill()
-        break'''
-        #MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
+        if self.is_min_tri:
+          MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
+        else:
+          marked_for_delete_polys_, marked_for_delete_points_ = GapContraction(self.geo, np.append(outer, inner)).fill()
+          self.geo.deletePrims(marked_for_delete_polys_, keep_points=True)
+          #marked_for_delete_polys += [p for p in marked_for_delete_polys_ if p not in marked_for_delete_polys]
+          marked_for_delete_points += [p for p in marked_for_delete_points_ if p not in marked_for_delete_points]
+    self.geo.deletePrims(marked_for_delete_polys, keep_points=True)
+    self.geo.deletePoints(marked_for_delete_points)
 
 # ------------ Main Code ------------ #
 for i, merge_node in enumerate(merge_nodes):
