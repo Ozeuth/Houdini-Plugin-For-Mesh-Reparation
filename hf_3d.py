@@ -296,6 +296,7 @@ class GapContraction():
         dist_to_pairs.put((min_dist, Pair(point, min_elem, min_inter)))
         points_to_elem[point] = min_elem
 
+
     if self.is_debug: print("START")
     marked_for_delete_points, marked_for_delete_polys = [], []
     while not dist_to_pairs.empty():
@@ -338,7 +339,7 @@ class GapContraction():
                 if prim_point not in points:
                   neighbors_pull[prim_point] = (neighbors_pull_weight * point_movement) if prim_point not in neighbors_pull else (neighbors_pull[prim_point] + neighbors_pull_weight * point_movement)
                   neighbors_pull_count[prim_point] += 1
-        
+                  
           elem_l, elem_r = elem[0] if points_neighbors[elem[0]][1] == elem[1] else elem[1], elem[0] if points_neighbors[elem[0]][0] == elem[1] else elem[1]
           elem_polys = set(elem_l.prims()).intersection(set(elem_r.prims()))
           elem_poly = None
@@ -359,7 +360,7 @@ class GapContraction():
                           + [self.sort_points((elem_r, p)) for p in points_neighbors[elem_r] if p != elem_l])
           old_point_edges = [self.sort_points((point, p)) for p in points_neighbors[point]]
           duplicate_edges = set(old_point_edges).intersection(set(old_elem_edges))
-          affected_elems = [point, elem] + old_point_edges
+          affected_elems = list(virtual_edges) + list(points_neighbors.keys())
 
           points_neighbors_l, points_neighbors_r = defaultdict(list), defaultdict(list)
           virtual_edges_l, virtual_edges_r = [], []
@@ -394,7 +395,6 @@ class GapContraction():
             points_to_elem[point_other] = None
             if point_other in points_neighbors_l: marked_for_delete_groups.append((points_neighbors_l, virtual_edges_l))
             if point_other in points_neighbors_r: marked_for_delete_groups.append((points_neighbors_r, virtual_edges_r))
-            affected_elems += [point_other]
             point_others.append(point_other)
 
           for marked_for_delete_group in marked_for_delete_groups:
@@ -467,13 +467,12 @@ class GapContraction():
           new_point_edges = [self.sort_points((elem, p)) for p in points_neighbors[point] if p != elem]
           duplicate_edges = set(new_point_edges).intersection(set(old_elem_edges))
 
-          affected_elems = old_point_edges + old_elem_edges + [point, elem]
-
           point_l, point_r = points_neighbors[point]
           elem_l, elem_r = points_neighbors[elem]
           points_to_elem[point] = None
           if is_ee_contraction:
             # Edge Contraction
+            affected_elems = old_point_edges + old_elem_edges + [point, elem]
             virtual_edges = ((set(virtual_edges) - set(old_point_edges)).union(set(new_point_edges))
                     - duplicate_edges - set([self.sort_points((point, elem))]))
             
@@ -515,6 +514,7 @@ class GapContraction():
 
           else:
             # Non-Edge Contraction
+            affected_elems = list(virtual_edges) + list(points_neighbors.keys())
             points_neighbors_l, points_neighbors_r = defaultdict(list), defaultdict(list)
             virtual_edges_l, virtual_edges_r = [], []
             points_neighbors[elem] = [elem_l, point_r]
@@ -545,7 +545,6 @@ class GapContraction():
               points_to_elem[point_other] = None
               if point_other in points_neighbors_l: marked_for_delete_groups.append((points_neighbors_l, virtual_edges_l))
               if point_other in points_neighbors_r: marked_for_delete_groups.append((points_neighbors_r, virtual_edges_r))
-              affected_elems += [point_other]
               point_others.append(point_other)
 
             for marked_for_delete_group in marked_for_delete_groups:
@@ -755,8 +754,8 @@ class Island_Fill():
           MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
         else:
           marked_for_delete_polys_, marked_for_delete_points_ = GapContraction(self.geo, np.append(outer, inner)).fill()
-          self.geo.deletePrims(marked_for_delete_polys_, keep_points=True)
-          #marked_for_delete_polys += [p for p in marked_for_delete_polys_ if p not in marked_for_delete_polys]
+          #self.geo.deletePrims(marked_for_delete_polys_, keep_points=True)
+          marked_for_delete_polys += [p for p in marked_for_delete_polys_ if p not in marked_for_delete_polys]
           marked_for_delete_points += [p for p in marked_for_delete_points_ if p not in marked_for_delete_points]
     self.geo.deletePrims(marked_for_delete_polys, keep_points=True)
     self.geo.deletePoints(marked_for_delete_points)
@@ -801,8 +800,8 @@ for i, merge_node in enumerate(merge_nodes):
   best_scale_2, best_dist_2 = best_fit_scale(lo_points_pos, hi_points_pos)
   best_scale = (best_dist_2 * best_scale_1) / (best_dist_1 + best_dist_2) + (best_dist_1 * best_scale_2) / (best_dist_1 + best_dist_2)
   best_dist = (best_dist_2 * best_dist_1) / (best_dist_1 + best_dist_2) + (best_dist_1 * best_dist_2) / (best_dist_1 + best_dist_2)
-
   print("Scaled hi-freq patch by " + str(best_scale) + " to lo-freq patch size, with error " + str(best_dist))
+  best_scale = 0.0660867871874346
   lo_node_translate = hou.Vector3((hou.session.find_parm(lo_unclean_node, "tx"), hou.session.find_parm(lo_unclean_node, "ty"), hou.session.find_parm(lo_unclean_node, "tz")))
   for point in points_patch:
     point.setPosition(point.position() * best_scale - lo_node_translate)
@@ -811,7 +810,8 @@ for i, merge_node in enumerate(merge_nodes):
   2. We now have the original mesh and a hi-frequency patch mesh. This forms an island hole
      Repair via hole-stitching algorithms.
   '''
-  Island_Fill(geo, points, patch_points).fill()
+  # NOTE: Minimum triangulation can be either bounded or not, gap contraction must be bounded
+  Island_Fill(geo, points, patch_points, is_min_tri=False, is_bounded=True).fill()
 
 node.bypass(True)
 
