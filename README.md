@@ -1,5 +1,6 @@
 # ASMR: Automatic Surface Mesh Repairer, a tool for 3D hole filling and mesh correction in Houdini
 An artist-centered tool to repair meshes with holes. Such holes are filled with coherent, context-aware new patches with correct topology and microsurface detail. This tool is packaged as a Houdini Digital Asset, making a user-friendly, integrated plugin for Mesh Reparation. 
+
 ![passes](./asset/1.png)
 
 ## Description
@@ -26,27 +27,25 @@ Users can generate their ideal surface detail in the "High Frequency" tab. The h
 While you are welcome to install this to test out, we recommend waiting until the installation process is more streamlined, eta July 2021.
 1. Ensure you have Houdini with Python 3 installed. If not, [download](https://www.sidefx.com/download/daily-builds/?production=true&python3=true) it
    * You do not need the commercial version
-2. <details><summary>Install the following packages (numba, hausdorff) on Houdini's Python 3</summary>
-    <p>
-      1. Download `get-pip.py` from [bootstrap.pypa.io](https://bootstrap.pypa.io/get-pip.py).
-      2. Place `get-pip.py` into Houdini's python37 folder. For example, this could be `C:\Program Files\Side Effects Software\Houdini_VERSION\python37` on Windows
-      3. Use Houdini's python3.7 to install pip: `PATH_TO_PYTHON\PYTHON PATH_TO_GET_PIP\get-pip.py`. For example, this could be `C:\Program Files\Side Effects Software\Houdini_VERSION\python37\python3.7.exe C:\Program Files\Side Effects Software\Houdini_VERSION\python37\get-pip.py` on Windows. If successful, `pip.exe` will appear in your `\Scripts` folder.
-      4. Use Houdini's pip to install the package for hausdorff distance:  `PATH_TO_PYTHON\PYTHON -m PATH_TO_PIP\pip install hausdorff`. For example, this could be `C:\Program Files\Side Effects Software\Houdini_VERSION\python37\python3.7.exe -m C:\Program Files\Side Effects Software\Houdini_VERSION\python37\Scripts\pip install numba hausdorff` on Windows. If successful, `numba` and `hausdorff` will appear as folders in `\lib\site-packages`
-    </p></details>
+2. Install the following packages (numba, hausdorff) on Houdini's Python 3.
+   <details><summary>Pip Installation</summary>
+   1. Download `get-pip.py` from [bootstrap.pypa.io](https://bootstrap.pypa.io/get-pip.py).
+   2. Place `get-pip.py` into Houdini's python37 folder. For example, this could be `C:\Program Files\Side Effects Software\Houdini_VERSION\python37` on Windows
+   3. Use Houdini's python3.7 to install pip: `PATH_TO_PYTHON\PYTHON PATH_TO_GET_PIP\get-pip.py`. For example, this could be `C:\Program Files\Side Effects Software\Houdini_VERSION\python37\python3.7.exe C:\Program Files\Side Effects Software\Houdini_VERSION\python37\get-pip.py` on Windows. If successful, `pip.exe` will appear in your `\Scripts` folder.
+   </details><details><summary>Package Installation</summary>
+   1. Use Houdini's pip to install the package for hausdorff distance:  `PATH_TO_PYTHON\PYTHON -m PATH_TO_PIP\pip install hausdorff`. For example, this could be `C:\Program Files\Side Effects Software\Houdini_VERSION\python37\python3.7.exe -m C:\Program Files\Side Effects Software\Houdini_VERSION\python37\Scripts\pip install numba hausdorff` on Windows. If successful, `numba` and `hausdorff` will appear as folders in `\lib\site-packages`
+   </details>
 3. Install the [High-Frequency Pass Synthesizer](https://github.com/Ozeuth/geometric-textures).
    <details><summary>Windows Users</summary>
-   <p>
    1. Install [WSL 2 for Windows](https://docs.microsoft.com/en-us/windows/wsl/install-win10)
    2. Install [NVIDIA CUDA drivers for Windows WSL](https://docs.nvidia.com/cuda/wsl-user-guide/index.html)
    3. Install the following packages (pytorch, numpy, faiss-gpu, matplotlib, pillow) on WSL's Python 3: `pip install pytorch numpy faiss-gpu matplotlib pillow`
    4. Open the command prompt and download our synthesizer into WSL: `git clone https://github.com/Ozeuth/geometric-textures.git`
-   </p></details>
-  <details><summary>Linux Users</summary>
-   <p>
+   </details><details><summary>Linux Users</summary>
    1. Install [Nvidia CUDA drivers](https://developer.nvidia.com/cuda-downloads)
    2. Install the following packages (pytorch, numpy, faiss-gpu, matplotlib, pillow) on either Houdini's or your independent version of Python 3: `pip install pytorch numpy faiss-gpu matplotlib pillow`
    3. Open the command prompt and download our synthesizer: `git clone https://github.com/Ozeuth/geometric-textures.git`
-   </p></details>
+   </details>
 4. Open the command prompt and download our code: `git clone https://github.com/Ozeuth/Houdini-Plugin-For-Mesh-Reparation.git`
 
 ## Development
