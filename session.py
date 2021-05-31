@@ -99,6 +99,8 @@ def preprocess():
   node_prep.parm("stopcondition").set(0)
 
 def low_repair():
+  print("START: " + str(time.time()))
+  node_switch = find_nodes("freq_switch", num_nodes=1)
   preprocess()
   # Low Frequency Pass
   node_lf = find_nodes("lf_3d", num_nodes=1)
@@ -106,9 +108,12 @@ def low_repair():
   1. Topology Repair
   '''
   node_lf.bypass(False)
+  node_switch.parm("input").set(1)
 
 def high_repair():
+  print("START: " + str(time.time()))
   global process
+  node_switch = find_nodes("freq_switch", num_nodes=1)
   # High Frequency Pass
   node_hf_prep = find_nodes("hf_3d_prep", num_nodes=1)
   '''
@@ -169,6 +174,7 @@ def high_repair():
   7. Stitch Patch Detail back to Mesh
   '''
   node_hf.bypass(False)
+  node_switch.parm("input").set(0)
     
 
 def high_repair_old(is_full=False):

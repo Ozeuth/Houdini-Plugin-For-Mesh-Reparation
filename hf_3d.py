@@ -754,10 +754,10 @@ class Island_Fill():
           MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
         else:
           marked_for_delete_polys_, marked_for_delete_points_ = GapContraction(self.geo, np.append(outer, inner)).fill()
-          #self.geo.deletePrims(marked_for_delete_polys_, keep_points=True)
-          marked_for_delete_polys += [p for p in marked_for_delete_polys_ if p not in marked_for_delete_polys]
+          self.geo.deletePrims(marked_for_delete_polys_, keep_points=True)
+          #marked_for_delete_polys += [p for p in marked_for_delete_polys_ if p not in marked_for_delete_polys]
           marked_for_delete_points += [p for p in marked_for_delete_points_ if p not in marked_for_delete_points]
-    self.geo.deletePrims(marked_for_delete_polys, keep_points=True)
+    #self.geo.deletePrims(marked_for_delete_polys, keep_points=True)
     self.geo.deletePoints(marked_for_delete_points)
 
 # ------------ Main Code ------------ #
