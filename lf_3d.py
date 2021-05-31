@@ -930,13 +930,6 @@ class Moving_Least_Squares_Fill():
     '''
     max_boundary_size = 2000
     boundaries = [(p_1_to_p_2_outer, p_1_to_p_2_inner_rev), (p_2_to_p_1_outer, p_2_to_p_1_inner_rev)] # outer, inner
-    b = np.append(boundaries[0][0], boundaries[0][1])
-    #62400
-    #51403
-    bs= []
-    for b_ in b:
-      bs.append(b_.number())
-    print(bs)
     num_split = 0
     while boundaries:
       outer, inner = boundaries.pop()
