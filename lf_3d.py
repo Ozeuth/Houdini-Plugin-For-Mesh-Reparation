@@ -43,7 +43,7 @@ def lss(A, b):
   num_vars = A.shape[1]
   rank = np.linalg.matrix_rank(A)
   if rank == num_vars:
-    sol = np.linalg.lstsq(A, b)[0]
+    sol = np.linalg.lstsq(A, b, rcond=None)[0]
     return (sol, True)
   else:
     sols = []
@@ -396,10 +396,13 @@ class Projection_BiLaplacian_Fill():
           t_neighbors = points_neighbors[t]
           for t_neighbor in t_neighbors:
             t_scale += e_lens_hashed[unord_hash(t.number(), t_neighbor.number())]
-          if math.sqrt(2) * (center - t.position()).length() <= min(t_scale, c_scale):
+          if (sqrt(2) * (center - t.position()).length()) <= min(t_scale, c_scale):
             split = False
+        print(split)
+        print(( * (center - t.position()).length()))
+        print(min(t_scale, c_scale))
         c_normal /= 3
-
+        
         if split:
           p_c = self.geo.createPoint()
           p_c.setPosition(center)
@@ -663,7 +666,6 @@ class Moving_Least_Squares_Fill():
       A.append([point_pos[0], point_pos[1], 1])
       b.append(point_pos[2])
       boundary_center = boundary_center + np.array(point_pos)
-
       p_l, p_r = get_clockwise_neighbors(point, points_neighbors[point])
       e_dir1 = hou.Vector3(p_l.position() - point.position()).normalized()
       e_dir2 = hou.Vector3(p_r.position() - point.position()).normalized()
@@ -1380,7 +1382,7 @@ for i in range(1, len(point_boundaries)):
   edges = edge_boundaries[i].edges()
   edges_neighbors = neighbor_edge_boundaries[i].edges()
 
-  if len(points) <= 8:
+  if len(points) <= 0:
     print("SMALL")
     '''
     1. Fill small holes with centroid-based method

@@ -98,12 +98,14 @@ for i in range(0, len(point_boundaries)):
     os.mkdir(raw_path)
   file_input_node.parm("file").set(raw_path + "/" + point_patch.name() + ".obj")
   file_input_node.parm("filemode").set(2)
+  file_input_node.parm("reload").pressButton()
 
   # file_output_node 
   file_output_node = old_file_output_nodes[i] if len(old_file_output_nodes) > i else node.parent().createNode("file", "oz_output_" + points.name())
   file_output_node.setPosition(file_input_node.position() + hou.Vector2(1, -0.5))
   file_output_node.parm("file").set(raw_path + "/" + point_patch.name() + "_hi.obj")
   file_output_node.parm("filemode").set(1)
+  file_output_node.parm("reload").pressButton()
 
   # transform_output_node
   transform_output_node = old_transform_output_nodes[i] if len(old_transform_output_nodes) > i else node.parent().createNode("xform", "oz_transform_output_" + points.name())
