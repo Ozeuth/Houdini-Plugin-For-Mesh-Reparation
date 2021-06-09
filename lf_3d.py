@@ -396,13 +396,10 @@ class Projection_BiLaplacian_Fill():
           t_neighbors = points_neighbors[t]
           for t_neighbor in t_neighbors:
             t_scale += e_lens_hashed[unord_hash(t.number(), t_neighbor.number())]
-          if (sqrt(2) * (center - t.position()).length()) <= min(t_scale, c_scale):
+          # Meant to be sqrt(2) but we found better results with 4
+          if 4 * (center - t.position()).length() <= min(t_scale, c_scale):
             split = False
-        print(split)
-        print(( * (center - t.position()).length()))
-        print(min(t_scale, c_scale))
         c_normal /= 3
-        
         if split:
           p_c = self.geo.createPoint()
           p_c.setPosition(center)
@@ -549,12 +546,13 @@ class Projection_BiLaplacian_Fill():
         p.setPosition(laplace_fs[ref])
 
 class Moving_Least_Squares_Fill():
-  def __init__(self, geo, points, points_vicinity, edges, edges_neighbors):
+  def __init__(self, geo, points, points_vicinity, edges, edges_neighbors, normal):
     self.geo = geo
     self.points = points
     self.points_vicinity = points_vicinity
     self.edges = edges
     self.edges_neighbors = edges
+    self.normal = normal
 
   def next_clockwise_p(self, p):
     vs = p.vertices()
@@ -637,63 +635,6 @@ class Moving_Least_Squares_Fill():
       eigenvalues, eigenvectors = np.linalg.eig(MTM)
       order = eigenvalues.argsort()
       u, v, s = eigenvectors[order[2]], eigenvectors[order[1]], eigenvectors[order[0]]
-
-    '''
-    A*. In order for this to work, we need to determine if the hole normal
-        calculated by the Reference Plane is correct or inverted. 
-        This can be done by computing our own Projection Plane via Least Squares
-
-    Plane eqn: ax + by + c = z
-        A        x   =   b
-    | x0 y0 1 |         | z0 |
-    | x1 y1 1 | | a |   | z1 |  => | a |
-    | ....... | | b | = | .. |     | b | = (A^T*A)^-1*A^T*b
-    | xn yn 1 | | c |   | zn |     | c |
-
-    is_correct_norm = |angle between s and our plane normal| < 90
-    '''
-    A = []
-    b = []
-    boundary_center = np.array([0, 0, 0])
-    boundary_normal = hou.Vector3((0, 0, 0))
-    points_neighbors = defaultdict(list)
-    for edge in edges:
-      p_1, p_2 = edge.points()
-      points_neighbors[p_1].append(p_2)
-      points_neighbors[p_2].append(p_1)
-    for point in points:
-      point_pos = point.position()
-      A.append([point_pos[0], point_pos[1], 1])
-      b.append(point_pos[2])
-      boundary_center = boundary_center + np.array(point_pos)
-      p_l, p_r = get_clockwise_neighbors(point, points_neighbors[point])
-      e_dir1 = hou.Vector3(p_l.position() - point.position()).normalized()
-      e_dir2 = hou.Vector3(p_r.position() - point.position()).normalized()
-      point_normal = e_dir2.cross(e_dir1).normalized()
-      boundary_normal += point_normal
-    boundary_normal /= len(points)
-    A = np.matrix(A)
-    b = np.matrix(b).T
-    boundary_center /= len(points)
-    fit_fail = False
-    det = np.linalg.det(A.T * A)
-    if (det > 0.000001):
-      fit = (A.T * A).I * A.T * b
-    else:
-      # This plane is almost parallel to xz plane
-      fit = np.linalg.pinv(A.T * A) * A.T * b
-      fit_fail = True
-    a = fit.item(0)
-    b = fit.item(1)
-    c = fit.item(2)
-    errors = b - A * fit
-    residual = np.linalg.norm(errors)
-
-    if (not fit_fail):
-      plane_normal = np.array([a, b, -1]) / math.sqrt(math.pow(a, 2) + math.pow(b, 2) + 1)
-    else:
-      plane_normal = np.array([0.001, 1, 0.001])* (1 if (a >= 0) else -1)
-    is_correct_norm = abs(hou.Vector3(plane_normal).angleTo(hou.Vector3(s))) <= 90
 
     '''
     B. Project each vicinity point p orthographically onto reference plane to get p_
@@ -803,6 +744,7 @@ class Moving_Least_Squares_Fill():
     sample_to_proj_point= defaultdict(hou.Point)
     min_uv = (float('inf'), float('inf'))
 
+    is_correct_norm = abs(hou.Vector3(self.normal).angleTo(hou.Vector3(s))) <= 90
     for uv_ind, sample_point in sample_points.items():
       u_ind, v_ind = uv_ind
       u_sample, v_sample = sample_point
@@ -818,19 +760,19 @@ class Moving_Least_Squares_Fill():
       sample_proj_point = geo.createPoint()
       sample_proj_point.setPosition(sample_proj_pos)
 
+      
       sample_proj_point.setAttribValue("N", hou.Vector3(s).normalized() if is_correct_norm else (hou.Vector3(s).normalized()*-1))
 
       patch_points.append(sample_proj_point)
       sample_to_proj_point[u_ind, v_ind] = sample_proj_point
       if ((u_ind - 1, v_ind - 1) in sample_points and (u_ind - 1, v_ind) in sample_points and (u_ind, v_ind - 1) in sample_points):
         min_uv = min((u_ind - 1, v_ind - 1), min_uv)
-        ps = [sample_to_proj_point[u_ind - 1, v_ind], sample_to_proj_point[u_ind, v_ind],
-              sample_to_proj_point[u_ind, v_ind - 1], sample_to_proj_point[u_ind - 1, v_ind - 1]]
+        ps = [sample_to_proj_point[u_ind - 1, v_ind - 1], sample_to_proj_point[u_ind, v_ind - 1], 
+              sample_to_proj_point[u_ind, v_ind], sample_to_proj_point[u_ind - 1, v_ind]]
+        '''ps = [sample_to_proj_point[u_ind - 1, v_ind], sample_to_proj_point[u_ind, v_ind],
+              sample_to_proj_point[u_ind, v_ind - 1], sample_to_proj_point[u_ind - 1, v_ind - 1]]'''
         if not is_correct_norm:
           ps.reverse()
-        '''
-        ps = [sample_to_proj_point[u_ind - 1, v_ind - 1], sample_to_proj_point[u_ind, v_ind - 1], 
-              sample_to_proj_point[u_ind, v_ind], sample_to_proj_point[u_ind - 1, v_ind]]'''
         poly = get_poly(geo, ps)
     if is_debug: print("Island patch generated in: " + str(time.time() - start), flush=True)
       
@@ -958,6 +900,7 @@ class Moving_Least_Squares_Fill():
         MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
     if is_debug: print("island hole filled in " + str(time.time() - start) + " with " + str(num_split) + " splits", flush=True)
     return patch_points
+    return []
     
 class AFT_Fill():
   def __init__(self, geo, points, edges, edges_neighbors):
@@ -1381,9 +1324,9 @@ for i in range(1, len(point_boundaries)):
   points_vicinity = neighbor_point_boundaries[i].points()
   edges = edge_boundaries[i].edges()
   edges_neighbors = neighbor_edge_boundaries[i].edges()
+  normal = geo.attribValue("normal_" + str(i))
 
-  if len(points) <= 0:
-    print("SMALL")
+  if len(points) <= 8:
     '''
     1. Fill small holes with centroid-based method
     '''
@@ -1392,21 +1335,19 @@ for i in range(1, len(point_boundaries)):
     else:
       Centroid_Fill(geo, points, edges).fill()
   elif len(points) <= 50:
-    print("MED")
     '''
     2. Fill Medium hole with projection-based method
     '''
     if med == 0:
       Projection_BiLaplacian_Fill(geo, points, edges, edges_neighbors).fill()
   else:
-    print("LARGE")
     '''
     3. Fill large hole with advancing front method
     '''
     saved_groups.append(point_boundaries[i].name())
     patch_points = geo.createPointGroup("patch_" + point_boundaries[i].name())
     if large == 0:
-      patch_points_ = Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors).fill()
+      patch_points_ = Moving_Least_Squares_Fill(geo, points, points_vicinity, edges, edges_neighbors, normal).fill()
     else:
       patch_points_, marked_for_deletion_ = AFT_Fill(geo, points, edges, edges_neighbors).fill()
       marked_for_deletion.extend(marked_for_deletion_)

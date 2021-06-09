@@ -103,10 +103,12 @@ def low_repair():
   node_switch = find_nodes("freq_switch", num_nodes=1)
   preprocess()
   # Low Frequency Pass
+  node_lf_prep = find_nodes("lf_3d_prep", num_nodes=1)
   node_lf = find_nodes("lf_3d", num_nodes=1)
   '''
   1. Topology Repair
   '''
+  node_lf_prep.bypass(False)
   node_lf.bypass(False)
   node_switch.parm("input").set(1)
 
