@@ -1,5 +1,4 @@
 import hou
-import objecttoolutils
 import os
 
 node = hou.pwd()

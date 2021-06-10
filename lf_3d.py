@@ -763,6 +763,7 @@ class Moving_Least_Squares_Fill():
       sample_proj_point.setPosition(sample_proj_pos)
 
       sample_proj_point.setAttribValue("N", sample_proj_normal)
+      patch_points.append(sample_proj_point)
       sample_to_proj_point[u_ind, v_ind] = sample_proj_point
       if ((u_ind - 1, v_ind - 1) in sample_points and (u_ind - 1, v_ind) in sample_points and (u_ind, v_ind - 1) in sample_points):
         min_uv = min((u_ind - 1, v_ind - 1), min_uv)
@@ -877,7 +878,7 @@ class Moving_Least_Squares_Fill():
     H. We can split the two regular holes to more holes, depending on the size of the hole
        Fill the holes using any method
     '''
-    '''max_boundary_size = 2000
+    max_boundary_size = 2000
     boundaries = [(p_1_to_p_2_outer, p_1_to_p_2_inner_rev), (p_2_to_p_1_outer, p_2_to_p_1_inner_rev)] # outer, inner
     num_split = 0
     while boundaries:
@@ -903,7 +904,7 @@ class Moving_Least_Squares_Fill():
       else:
         num_split += 1
         MinTriangulation(self.geo, np.append(outer, inner)).min_triangulation(generate=True)
-    if is_debug: print("island hole filled in " + str(time.time() - start) + " with " + str(num_split) + " splits", flush=True)'''
+    if is_debug: print("island hole filled in " + str(time.time() - start) + " with " + str(num_split) + " splits", flush=True)
     return patch_points
     
 class AFT_Fill():
