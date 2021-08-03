@@ -1,10 +1,14 @@
 # ASMR: Automatic Surface Mesh Repairer, a tool for 3D hole filling and mesh correction in Houdini
+<b><a href="https://drive.google.com/file/d/1hyhO3JteqJMAyyn_9l-NreiBx2BUwKNA/view" target="_blank">[Internal Report]</a></b>
+<br><br>
 An artist-centered tool to repair meshes with holes. Such holes are filled with coherent, context-aware new patches with correct topology and microsurface detail. This tool is packaged as a Houdini Digital Asset, making a user-friendly, integrated plugin for Mesh Reparation. 
 
-![passes](./asset/1.png)
+![results](./asset/1.png)
 
 ## Description
 This tool is capable of repairing holes in polygonal meshes. It uses a two-pass pipeline to first restore the missing shape (low-frequency topology) and to then restore the missing surface detail (high-frequency microsurface detail). The seperability of the low-frequency and high-frequency passes means users can pick their ideal underlying shape and surface detail. It also means users can elect to do only the low-frequency pass to repair low resolution meshes. The result of this process is a mesh that is watertight, manifold and whose repaired surface blends well with the original mesh.
+
+![passes](./asset/2.png)
 
 ### Low-Frequency Pass
 Users can select their ideal hole-filling method in the "Low Frequency" tab. This tool categorizes holes into Small(<=8 hole boundary points>), Medium (<8 to <=20 hole boundary points) and Large(> 20 hole boundary points),  with a different selection of available algorithms for each. This is because some algorithms better suit the characteristics of certain hole categories. The algorithms mentioned are based on or extended off of the research papers, [A Fast Hole-Filling Method for Triangular Mesh in Additive Repair, Chao Feng, Jin Liang, Maodong Ren, Gen Qiao, Wang Lu, Shifan Liu](https://www.mdpi.com/2076-3417/10/3/969/htm), [Filling holes on locally smooth surfacesreconstructed from point clouds, Jianning Wang, Manuel M. Oliveria](https://www.inf.ufrgs.br/~oliveira/pubs_files/FHPC/Wang_Oliveira_Filling%20Holes%20on%20Locally%20Smooth%20Surfaces_Imavis_2007_Pre-print.pdf) and [Island Hole Automatic Filling Algorithm in Triangular Meshes, Feng Long Bi, Ying Hu, Xin Yu Chen, Yue Ma](https://www.scientific.net/AMM.347-350.3486).
