@@ -752,7 +752,7 @@ class Moving_Least_Squares_Fill():
       u_sample, v_sample = sample_point
 
       D = np.sum(np.power((UV-sample_point), 2), axis=1)
-      W = np.diag(np.exp(-1*D)/(D))
+      W = np.diag(np.exp(-1/16*D)/(D))
       A = np.matmul(np.linalg.inv(np.matmul(B, np.matmul(W, B.T))), np.matmul(B, np.matmul(W, F)))
 
       # We map from uv space to 3d space, and then project the sample point in direction S
